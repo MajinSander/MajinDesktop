@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.Drawing;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
 namespace MajinDesktop;
@@ -70,27 +71,20 @@ sealed class TrayApp : ApplicationContext
         string title = $"{i + 1} · {Config.SlotTitle(i)}";
         if (slot.IsEmpty)
         {
-            osd.Flash(title, "Slot vacío: guarda primero una disposición en él", null, Theme.Muted);
+            osd.Flash(title, "Estado vacío: guarda primero el escritorio en él", null, Theme.Muted);
             return;
         }
-        var before = TrySnapshot();
-        var status = Displays.Apply(slot.Monitors, false, out string error);
-        switch (status)
+        var mons = slot.UseDisplays ? slot.Monitors : null;
+        var icons = slot.UseIcons ? slot.Icons : null;
+        if (mons is not { Count: > 0 } && icons is not { Count: > 0 })
         {
-            case ApplyStatus.Applied:
-            case ApplyStatus.AlreadyActive:
-                Config.Last = i;
-                if (status == ApplyStatus.Applied && before != null) Config.Previous = before;
-                TrySave();
-                osd.Flash(title, status == ApplyStatus.Applied ? "Disposición aplicada" : "Ya estaba activa", slot.Monitors, Theme.Green);
-                break;
-            case ApplyStatus.NoMonitorsFound:
-                osd.Flash(title, "Ninguna de sus pantallas está conectada ahora", slot.Monitors, Theme.Red);
-                break;
-            default:
-                Log.Error($"Aplicar slot {i + 1}: {error}");
-                osd.Flash(title, error, slot.Monitors, Theme.Red);
-                break;
+            osd.Flash(title, "No tiene marcada ninguna parte (pantallas o iconos)", null, Theme.Muted);
+            return;
+        }
+        if (Restore(title, mons, icons, slot.Monitors))
+        {
+            Config.Last = i;
+            TrySave();
         }
         settings?.RefreshSlots();
     }
@@ -98,35 +92,114 @@ sealed class TrayApp : ApplicationContext
     // Vuelve a como estaba todo antes del último cambio. Pulsarlo otra vez rehace el cambio.
     public void Undo()
     {
-        var previous = Config.Previous;
-        if (previous == null || previous.Count == 0)
+        if (Config.Previous is not { Count: > 0 } && Config.PreviousIcons is not { Count: > 0 })
         {
             osd.Flash("Deshacer", "No hay ningún cambio que deshacer", null, Theme.Muted);
             return;
         }
-        var before = TrySnapshot();
-        var status = Displays.Apply(previous, false, out string error);
-        switch (status)
+        if (Restore("Deshacer", Config.Previous, Config.PreviousIcons, Config.Previous))
         {
-            case ApplyStatus.Applied:
-                Config.Previous = before;
-                Config.Last = ActiveSlot() ?? -1;
-                TrySave();
-                osd.Flash("Deshecho", "Las pantallas vuelven a estar como antes", previous, Theme.Green);
-                break;
-            case ApplyStatus.AlreadyActive:
-                osd.Flash("Deshacer", "Las pantallas ya están así", previous, Theme.Muted);
-                break;
-            case ApplyStatus.NoMonitorsFound:
-                osd.Flash("Deshacer", "Esas pantallas ya no están conectadas", previous, Theme.Red);
-                break;
-            default:
-                Log.Error("Deshacer: " + error);
-                osd.Flash("No se pudo deshacer", error, previous, Theme.Red);
-                break;
+            Config.Last = ActiveSlot() ?? -1;
+            TrySave();
         }
         settings?.RefreshSlots();
     }
+
+    // Aplica pantallas y después iconos. Antes guarda cómo estaba todo, para poder deshacerlo.
+    bool Restore(string title, List<MonitorState>? mons, List<IconPos>? icons, IList<MonitorState>? preview)
+    {
+        var beforeMons = TrySnapshot();
+        var beforeIcons = beforeMons != null && icons is { Count: > 0 } ? TryIcons(beforeMons) : null;
+
+        var status = ApplyStatus.AlreadyActive;
+        if (mons is { Count: > 0 })
+        {
+            status = Displays.Apply(mons, false, out string error);
+            if (status == ApplyStatus.Failed)
+            {
+                Log.Error($"{title}: {error}");
+                osd.Flash(title, error, preview, Theme.Red);
+                return false;
+            }
+            if (status == ApplyStatus.NoMonitorsFound && icons is not { Count: > 0 })
+            {
+                osd.Flash(title, "Ninguna de sus pantallas está conectada ahora", preview, Theme.Red);
+                return false;
+            }
+        }
+
+        if (status == ApplyStatus.Applied || icons is { Count: > 0 })
+        {
+            Config.Previous = beforeMons;
+            Config.PreviousIcons = beforeIcons;
+        }
+
+        string screens = status == ApplyStatus.Applied ? "Pantallas aplicadas" : mons is { Count: > 0 } ? "Pantallas ya estaban así" : "";
+        if (icons is not { Count: > 0 })
+        {
+            osd.Flash(title, screens, preview, Theme.Green);
+            return true;
+        }
+        if (status == ApplyStatus.Applied)
+        {
+            // Explorer recoloca los iconos a su manera tras cambiar las pantallas: se espera a que termine.
+            osd.Flash(title, screens + " · colocando iconos…", preview, Theme.Green);
+            PlaceIconsLater(title, icons, preview, screens);
+        }
+        else
+        {
+            var r = PlaceIcons(title, icons);
+            if (r != null) osd.Flash(title, Join(screens, IconsText(r)), preview, r.Missing + r.NoMonitor > 0 ? Theme.Accent : Theme.Green);
+        }
+        return true;
+    }
+
+    void PlaceIconsLater(string title, List<IconPos> icons, IList<MonitorState>? preview, string screens)
+    {
+        int round = 0;
+        var timer = new Timer { Interval = 1200 };
+        timer.Tick += (_, _) =>
+        {
+            round++;
+            var r = PlaceIcons(title, icons);
+            if (round == 1 && r != null)
+            {
+                osd.Flash(title, Join(screens, IconsText(r)), preview, Theme.Green);
+                timer.Interval = 2500; // segunda pasada por si Explorer vuelve a moverlos un poco después
+                return;
+            }
+            timer.Stop();
+            timer.Dispose();
+        };
+        timer.Start();
+    }
+
+    IconApplyResult? PlaceIcons(string title, List<IconPos> icons)
+    {
+        try
+        {
+            var r = Icons.Apply(icons, Displays.Snapshot());
+            if (r.AutoArrangeDisabled) Log.Info("Desactivado 'Organizar iconos automáticamente' para poder colocarlos");
+            return r;
+        }
+        catch (Exception ex) when (ex is COMException or InvalidCastException or Win32Exception)
+        {
+            Log.Error("Colocar iconos", ex);
+            osd.Flash(title, "No se pudieron colocar los iconos (¿Explorer reiniciándose?)", null, Theme.Red);
+            return null;
+        }
+    }
+
+    static string IconsText(IconApplyResult r)
+    {
+        string text = r.Moved == 0 ? "iconos ya en su sitio" : $"{r.Moved} iconos recolocados";
+        int skipped = r.Missing + r.NoMonitor;
+        if (skipped > 0) text += $" ({skipped} ya no están o su pantalla no está)";
+        if (r.AutoArrangeDisabled) text += " · quitado 'Organizar automáticamente'";
+        return text;
+    }
+
+    static string Join(string a, string b) => a.Length == 0 ? char.ToUpper(b[0]) + b.Substring(1) : $"{a} · {b}";
 
     static List<MonitorState>? TrySnapshot()
     {
@@ -134,12 +207,18 @@ sealed class TrayApp : ApplicationContext
         catch (Win32Exception ex) { Log.Error("Leer pantallas", ex); return null; }
     }
 
+    static List<IconPos>? TryIcons(List<MonitorState> mons)
+    {
+        try { return Icons.Snapshot(mons); }
+        catch (Exception ex) when (ex is COMException or InvalidCastException) { Log.Error("Leer iconos", ex); return null; }
+    }
+
     public void Cycle()
     {
         var saved = Enumerable.Range(0, Config.SlotCount).Where(i => !Config.Slots[i].IsEmpty).ToList();
         if (saved.Count == 0)
         {
-            osd.Flash("Sin slots", "Guarda una disposición desde el menú de la bandeja", null, Theme.Muted);
+            osd.Flash("Sin estados", "Guarda el escritorio en un estado desde el menú de la bandeja", null, Theme.Muted);
             return;
         }
         int from = ActiveSlot() ?? Config.Last;
@@ -149,12 +228,17 @@ sealed class TrayApp : ApplicationContext
 
     public void SaveSlot(int i)
     {
+        string title = $"{i + 1} · {Config.SlotTitle(i)}";
         try
         {
-            Config.Slots[i].Monitors = Displays.Snapshot();
+            var slot = Config.Slots[i];
+            slot.Monitors = Displays.Snapshot();
+            var icons = TryIcons(slot.Monitors);
+            slot.Icons = icons ?? new List<IconPos>();
             Config.Last = i;
             Config.Save();
-            osd.Flash($"{i + 1} · {Config.SlotTitle(i)}", "Disposición actual guardada", Config.Slots[i].Monitors, Theme.Accent);
+            string detail = $"Guardadas {slot.Monitors.Count} pantallas" + (icons != null ? $" y {icons.Count} iconos" : " (los iconos no se pudieron leer)");
+            osd.Flash(title, detail, slot.Monitors, icons != null ? Theme.Accent : Theme.Red);
         }
         catch (Exception ex) when (ex is Win32Exception or IOException or UnauthorizedAccessException)
         {
@@ -166,6 +250,7 @@ sealed class TrayApp : ApplicationContext
     public void ClearSlot(int i)
     {
         Config.Slots[i].Monitors.Clear();
+        Config.Slots[i].Icons.Clear();
         TrySave();
         settings?.RefreshSlots();
     }
@@ -208,10 +293,10 @@ sealed class TrayApp : ApplicationContext
             menu.Items.Add(item);
             any = true;
         }
-        if (!any) menu.Items.Add(new ToolStripMenuItem("Aún no hay slots guardados") { Enabled = false });
+        if (!any) menu.Items.Add(new ToolStripMenuItem("Aún no hay estados guardados") { Enabled = false });
 
         menu.Items.Add(new ToolStripSeparator());
-        var save = Item("Guardar disposición actual en", null);
+        var save = Item("Guardar el escritorio actual en", null);
         for (int i = 0; i < Config.SlotCount; i++)
         {
             int n = i;
@@ -220,13 +305,13 @@ sealed class TrayApp : ApplicationContext
         }
         if (save.DropDown is ToolStripDropDownMenu dd) { dd.ShowImageMargin = false; dd.ShowCheckMargin = true; dd.Font = Theme.Body; }
         menu.Items.Add(save);
-        var next = Item("Siguiente slot", Cycle);
+        var next = Item("Siguiente estado", Cycle);
         next.ShortcutKeyDisplayString = Config.Cycle.ToString();
         next.Enabled = any;
         menu.Items.Add(next);
         var undo = Item("Deshacer último cambio", Undo);
         undo.ShortcutKeyDisplayString = Config.Undo.ToString();
-        undo.Enabled = Config.Previous is { Count: > 0 };
+        undo.Enabled = Config.Previous is { Count: > 0 } || Config.PreviousIcons is { Count: > 0 };
         menu.Items.Add(undo);
 
         menu.Items.Add(new ToolStripSeparator());

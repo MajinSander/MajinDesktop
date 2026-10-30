@@ -74,14 +74,18 @@ sealed class Slot
     [DataMember(Name = "name", Order = 1)] public string Name = "";
     public Hotkey Hotkey = new();
     [DataMember(Name = "monitors", Order = 3)] public List<MonitorState> Monitors = new();
-    public bool IsEmpty => Monitors.Count == 0;
+    [DataMember(Name = "icons", Order = 4)] public List<IconPos> Icons = new();
+    // Qué partes se aplican (se guardan siempre las dos).
+    [DataMember(Name = "useDisplays", Order = 5)] public bool UseDisplays = true;
+    [DataMember(Name = "useIcons", Order = 6)] public bool UseIcons = true;
+    public bool IsEmpty => Monitors.Count == 0 && Icons.Count == 0;
 
     [DataMember(Name = "hotkey", Order = 2)]
     string HotkeyText { get => Hotkey.Serialize(); set => Hotkey = Hotkey.Parse(value); }
 
     // El serializador no ejecuta constructores ni inicializadores: se rellenan aquí los valores por defecto.
     [OnDeserializing]
-    void Defaults(StreamingContext _) { Name = ""; Hotkey = new(); Monitors = new(); }
+    void Defaults(StreamingContext _) { Name = ""; Hotkey = new(); Monitors = new(); Icons = new(); UseDisplays = UseIcons = true; }
 }
 
 [DataContract]
@@ -100,7 +104,9 @@ sealed class Config
     public Hotkey Cycle = new();
     public Hotkey Undo = new();
     [DataMember(Name = "last", Order = 4)] public int Last = -1;   // último slot aplicado (para el atajo de ciclo)
-    [DataMember(Name = "previous", Order = 5)] public List<MonitorState>? Previous = null; // lo que había antes del último cambio
+    // Cómo estaba todo antes del último cambio (para deshacer).
+    [DataMember(Name = "previous", Order = 5)] public List<MonitorState>? Previous = null;
+    [DataMember(Name = "previousIcons", Order = 5)] public List<IconPos>? PreviousIcons = null;
 
     [DataMember(Name = "cycle", Order = 2)]
     string CycleText { get => Cycle.Serialize(); set => Cycle = Hotkey.Parse(value); }
@@ -197,7 +203,7 @@ sealed class Config
     }
 
     public string SlotTitle(int i) =>
-        Slots[i].Name.Length > 0 ? Slots[i].Name : $"Slot {i + 1}";
+        Slots[i].Name.Length > 0 ? Slots[i].Name : $"Estado {i + 1}";
 
     // --- Arranque con Windows (HKCU\...\Run) ---
     const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";

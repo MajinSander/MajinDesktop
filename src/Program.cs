@@ -1,6 +1,7 @@
 using System;
 using System.ComponentModel;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Windows.Forms;
 
@@ -58,7 +59,20 @@ static class Program
                         Console.WriteLine($"{m.Name,-20} {m.Width}x{m.Height} en ({m.X},{m.Y}) {m.RotationText}{(m.Primary ? " [principal]" : "")}\n    {m.Path}");
                     for (int i = 0; i < Config.SlotCount; i++)
                         if (!cfg.Slots[i].IsEmpty)
-                            Console.WriteLine($"slot {i + 1}: {cfg.SlotTitle(i)} ({cfg.Slots[i].Monitors.Count} pantallas, atajo {cfg.Slots[i].Hotkey})");
+                            Console.WriteLine($"estado {i + 1}: {cfg.SlotTitle(i)} ({cfg.Slots[i].Monitors.Count} pantallas, {cfg.Slots[i].Icons.Count} iconos, atajo {cfg.Slots[i].Hotkey})");
+                    return 0;
+
+                case "icons":
+                    var mons = Displays.Snapshot();
+                    var icons = Icons.Snapshot(mons);
+                    foreach (var ic in icons)
+                        Console.WriteLine($"{ic.Name,-40} {mons.FirstOrDefault(m => m.Path == ic.Monitor)?.Name,-14} +{ic.Dx},+{ic.Dy}");
+                    Console.WriteLine($"{icons.Count} iconos");
+                    if (args.Length > 1 && args[1] is "--reapply" or "--dry")
+                    {
+                        var r = Icons.Apply(icons, mons, args[1] == "--dry");
+                        Console.WriteLine($"Reaplicado: {r.Moved} movidos, {r.Missing} no encontrados, {r.NoMonitor} sin pantalla");
+                    }
                     return 0;
 
                 case "version":
@@ -71,26 +85,42 @@ static class Program
 
                 case "save" when slot >= 0 && slot < Config.SlotCount:
                     cfg.Slots[slot].Monitors = Displays.Snapshot();
+                    cfg.Slots[slot].Icons = Icons.Snapshot(cfg.Slots[slot].Monitors);
                     cfg.Save();
-                    Console.WriteLine($"Guardado en el slot {slot + 1}.");
+                    Console.WriteLine($"Guardado en el estado {slot + 1}: {cfg.Slots[slot].Monitors.Count} pantallas y {cfg.Slots[slot].Icons.Count} iconos.");
                     return 0;
 
                 case "apply" or "validate" when slot >= 0 && slot < Config.SlotCount:
-                    if (cfg.Slots[slot].IsEmpty) { Console.WriteLine($"El slot {slot + 1} está vacío."); return 2; }
-                    var status = Displays.Apply(cfg.Slots[slot].Monitors, cmd == "validate", out string error);
-                    Console.WriteLine(status switch
+                {
+                    var st = cfg.Slots[slot];
+                    if (st.IsEmpty) { Console.WriteLine($"El estado {slot + 1} está vacío."); return 2; }
+                    var status = ApplyStatus.AlreadyActive;
+                    if (st.UseDisplays && st.Monitors.Count > 0)
                     {
-                        ApplyStatus.Applied => cmd == "validate" ? "Válido: Windows aceptaría esta disposición." : "Aplicado.",
-                        ApplyStatus.AlreadyActive => "Ya estaba activo.",
-                        ApplyStatus.NoMonitorsFound => "Ninguna pantalla del slot está conectada.",
-                        _ => "Error: " + error,
-                    });
-                    return status is ApplyStatus.Applied or ApplyStatus.AlreadyActive ? 0 : 1;
+                        status = Displays.Apply(st.Monitors, cmd == "validate", out string error);
+                        Console.WriteLine("Pantallas: " + status switch
+                        {
+                            ApplyStatus.Applied => cmd == "validate" ? "Windows aceptaría esta disposición." : "aplicadas.",
+                            ApplyStatus.AlreadyActive => "ya estaban así.",
+                            ApplyStatus.NoMonitorsFound => "ninguna del estado está conectada.",
+                            _ => "error: " + error,
+                        });
+                        if (status == ApplyStatus.Failed) return 1;
+                    }
+                    if (st.UseIcons && st.Icons.Count > 0)
+                    {
+                        // Tras cambiar las pantallas, Explorer recoloca los iconos a su manera: se espera un poco.
+                        if (status == ApplyStatus.Applied && cmd == "apply") Thread.Sleep(1500);
+                        var r = Icons.Apply(st.Icons, Displays.Snapshot(), cmd == "validate");
+                        Console.WriteLine($"Iconos: {r.Moved} {(cmd == "validate" ? "se moverían" : "recolocados")}, {r.Missing} ya no están, {r.NoMonitor} sin su pantalla.");
+                    }
+                    return 0;
+                }
             }
-            Console.WriteLine("Uso: MajinDesktop [--list | --save N | --apply N | --validate N]");
+            Console.WriteLine("Uso: MajinDesktop [--list | --icons | --save N | --apply N | --validate N | --version]");
             return 2;
         }
-        catch (Exception ex) when (ex is Win32Exception or IOException)
+        catch (Exception ex) when (ex is Win32Exception or IOException or System.Runtime.InteropServices.COMException or InvalidCastException)
         {
             Console.WriteLine("Error: " + ex.Message);
             return 1;

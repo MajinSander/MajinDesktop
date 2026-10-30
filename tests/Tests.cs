@@ -28,6 +28,9 @@ static class Tests
             Run("Plan: principal ausente", PlanShiftsWhenPrimaryMissing);
             Run("Plan: respaldo por modelo", PlanFallsBackToEdid);
             Run("Coincide con el actual", MatchesCurrent);
+            Run("Iconos: ida y vuelta por pantalla", IconsRoundTrip);
+            Run("Iconos: cambia la principal", IconsFollowTheirMonitor);
+            Run("Iconos: pantalla ausente o más pequeña", IconsMissingOrSmaller);
             Run("Config: primera vez", ConfigDefaults);
             Run("Config: JSON ida y vuelta", ConfigRoundTrip);
             Run("Config: migra config.ini", ConfigMigratesIni);
@@ -181,6 +184,41 @@ static class Tests
         var moved = f.Current.Select(m => M(m.Path, m.X, m.Y + 10, m.Rotation)).ToList();
         Is(false, Displays.Matches(f.Current, moved), "movida");
         Is(false, Displays.Matches(f.Current, new List<MonitorState>()), "slot vacío");
+    }
+
+    // ---------- Iconos ----------
+
+    static readonly System.Drawing.Size Cell = new(94, 116);
+
+    static void IconsRoundTrip()
+    {
+        var mons = ThreeScreens().Current;
+        foreach (var p in new[] { new System.Drawing.Point(2467, 1278), new System.Drawing.Point(-1080, -218), new System.Drawing.Point(2560 + 1000, 0) })
+        {
+            var rel = Icons.ToRelative("k", "n", p, mons)!;
+            Is(p, Icons.ToScreen(rel, mons, Cell)!.Value, $"punto {p}");
+        }
+        Is("R", Icons.ToRelative("k", "n", new System.Drawing.Point(2600, 100), mons)!.Monitor, "pantalla derecha");
+    }
+
+    static void IconsFollowTheirMonitor()
+    {
+        // Guardado con C de principal; ahora la izquierda es la principal y todo se ha desplazado.
+        var before = ThreeScreens().Current;
+        var icon = Icons.ToRelative("k", "n", new System.Drawing.Point(100, 50), before)!;
+        Is("C", icon.Monitor, "en la central");
+        var after = new Fake().Add("L", 0, 0, 1920, 1080, 4).Add("C", 1080, 218, 2560, 1440).Current;
+        Is(new System.Drawing.Point(1180, 268), Icons.ToScreen(icon, after, Cell)!.Value, "sigue en la central");
+    }
+
+    static void IconsMissingOrSmaller()
+    {
+        var mons = ThreeScreens().Current;
+        var onRight = Icons.ToRelative("k", "n", new System.Drawing.Point(2560 + 1000, 1800), mons)!;
+        Is(null, Icons.ToScreen(onRight, new Fake().Add("C", 0, 0, 2560, 1440).Current, Cell), "sin la derecha");
+        // La derecha pasa a horizontal (1920x1080): el icono que estaba a 1800 px de alto se queda dentro.
+        var smaller = new Fake().Add("C", 0, 0, 2560, 1440).Add("R", 2560, 0, 1920, 1080).Current;
+        Is(1080 - Cell.Height / 2, Icons.ToScreen(onRight, smaller, Cell)!.Value.Y, "recortado");
     }
 
     // ---------- Configuración ----------

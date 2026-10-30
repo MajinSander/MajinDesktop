@@ -279,3 +279,56 @@ sealed class HotkeyBox : TextBox
         return string.Join("+", parts) + "+";
     }
 }
+
+// Interruptor pequeño con dibujo (pantalla o iconos) para elegir qué partes aplica un estado.
+sealed class PartToggle : Control
+{
+    public enum Glyph { Screens, Icons }
+
+    readonly Glyph glyph;
+    bool on, hover;
+    public event Action? Toggled;
+
+    public PartToggle(Glyph glyph)
+    {
+        this.glyph = glyph;
+        Cursor = Cursors.Hand;
+        TabStop = false;
+        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer |
+                 ControlStyles.ResizeRedraw | ControlStyles.UserPaint, true);
+    }
+
+    public bool Checked { get => on; set { on = value; Invalidate(); } }
+
+    protected override void OnMouseEnter(EventArgs e) { hover = true; Invalidate(); base.OnMouseEnter(e); }
+    protected override void OnMouseLeave(EventArgs e) { hover = false; Invalidate(); base.OnMouseLeave(e); }
+    protected override void OnEnabledChanged(EventArgs e) { Invalidate(); base.OnEnabledChanged(e); }
+    protected override void OnClick(EventArgs e) { base.OnClick(e); if (Enabled) Toggled?.Invoke(); }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        float s = DeviceDpi / 96f;
+        var g = e.Graphics;
+        g.Clear(Parent?.BackColor ?? Theme.Panel);
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        Color bg = !Enabled ? Theme.Deep : on ? (hover ? Theme.AccentDark : Theme.Accent) : (hover ? Theme.Hover : Theme.Deep);
+        Color fg = !Enabled ? Theme.Line : on ? Color.White : Theme.Muted;
+        using (var path = Theme.Rounded(new RectangleF(0, 0, Width - 0.5f, Height - 0.5f), 4 * s))
+        using (var b = new SolidBrush(bg)) g.FillPath(b, path);
+        float cx = Width / 2f, cy = Height / 2f;
+        using var brush = new SolidBrush(fg);
+        using var pen = new Pen(fg, 1.6f * s);
+        if (glyph == Glyph.Screens)
+        {
+            g.DrawRectangle(pen, cx - 7 * s, cy - 6 * s, 14 * s, 9 * s);
+            g.FillRectangle(brush, cx - 1 * s, cy + 3 * s, 2 * s, 2.5f * s);
+            g.FillRectangle(brush, cx - 4 * s, cy + 5.5f * s, 8 * s, 1.6f * s);
+        }
+        else
+        {
+            for (int row = 0; row < 2; row++)
+                for (int col = 0; col < 2; col++)
+                    g.FillRectangle(brush, cx - 6 * s + col * 7 * s, cy - 6 * s + row * 7 * s, 5 * s, 5 * s);
+        }
+    }
+}

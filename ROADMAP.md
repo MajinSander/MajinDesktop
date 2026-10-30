@@ -34,17 +34,18 @@ Ejemplo, **Modo TV**: solo la TV encendida, HDR activado, audio por la TV, barra
 - **Pruebas automáticas** de la lógica (colocación de pantallas, atajos, configuración y migración). Se ejecutan en cada compilación y en cada push.
 - La prueba de cambio de pantallas contra Windows ya está hecha (acepta girar pantallas y cambiar la principal); queda el uso diario.
 
-## v0.3 · Iconos dentro de los estados
+## v0.3 · Iconos dentro de los estados ✅
 
 Esta fase arregla un problema clásico: al cambiar de pantallas, Windows desordena los iconos del escritorio.
 
-- **Guardar y restaurar la posición de los iconos.** Se hace con la vía documentada de Windows: `IShellWindows` → vista del escritorio → `IFolderView` (`GetItemPosition` / `SelectAndPositionItems`). No toca el registro ni reinicia Explorer.
-- **Posiciones relativas a cada pantalla.** Cada icono se guarda como "pantalla + distancia a su esquina", no en coordenadas absolutas. Así, al cambiar de pantalla principal o de orden, cada icono sigue en su monitor.
-- **Restauración tras cada cambio de pantallas.** Se espera a que Explorer termine de reacomodarse y se recolocan los iconos.
-- Si están activadas, se desactivan *Organizar automáticamente* y *Alinear a la cuadrícula* mientras se recolocan, y luego se vuelven a dejar como estaban.
-- **Tamaño de iconos** (`IFolderView2.SetViewModeAndIconSize`) y mostrar u ocultar los iconos.
+- **Guardar y restaurar la posición de los iconos.** Se hace con la vía documentada de Windows: `IShellWindows` → vista del escritorio → `IFolderView2` (`GetItemPosition` / `SelectAndPositionItems`). No toca el registro, no reinicia Explorer y no toca ninguna ventana del fondo (Wallpaper Engine sigue a lo suyo).
+- **Posiciones relativas a cada pantalla.** Cada icono se guarda como "pantalla + distancia a su esquina", no en coordenadas absolutas. Así, al cambiar de pantalla principal o de orden, cada icono sigue en su monitor. Si la pantalla ahora es más pequeña, el icono se queda dentro del borde.
+- **Restauración tras cada cambio de pantallas.** Se espera a que Explorer termine de reacomodarse y se recolocan los iconos en dos pasadas.
+- **Cada estado elige qué aplica** (pantallas, iconos o las dos cosas). *Deshacer* también devuelve los iconos.
+- Si *Organizar automáticamente* está activado, se desactiva (con esa opción Windows ignora las posiciones) y se avisa.
+- Comprobado en tu escritorio con 89 iconos: guardar y reaplicar mueve 0 iconos, y un icono movido a propósito vuelve exactamente a su sitio.
 
-*Hecho cuando:* pasas de 3 pantallas a "solo la central" y vuelves, y cada icono acaba exactamente donde estaba.
+Pendiente para más adelante: tamaño de iconos y mostrar u ocultar los iconos por estado.
 
 ## v0.4 · Pantallas avanzadas, audio y modo TV
 
@@ -131,7 +132,7 @@ Es una ventana nueva con una **representación de tu escritorio**: tus pantallas
 **English summary:** MajinDesktop will grow from monitor-layout slots into a desktop state manager. A state can hold monitors (including on/off, resolution, refresh rate and HDR), desktop icon positions stored per monitor, default audio output and actions. Planned releases:
 
 - **v0.2** foundations: undo, JSON config, error log, automated tests (done).
-- **v0.3** desktop icons inside states.
+- **v0.3** desktop icons inside states (done).
 - **v0.4** advanced monitors, audio and a TV mode with a safety revert.
 - **v0.5** a visual desktop organizer with Fences-style zones.
 - **v0.6** game shortcuts: library scan, batch creation, icon fixing and batch operations with undo.

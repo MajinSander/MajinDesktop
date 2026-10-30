@@ -50,7 +50,7 @@ sealed class SettingsForm : Form
         Add(new Label { Text = "MajinDesktop", Font = Theme.Title, ForeColor = Theme.Bright, AutoSize = true }, 72, 14);
         Add(new Label
         {
-            Text = "Guarda la posición y orientación de tus pantallas y cambia entre ellas con un atajo.",
+            Text = "Guarda tus pantallas y los iconos del escritorio en estados y cambia entre ellos con un atajo.",
             ForeColor = Theme.Muted, AutoSize = true,
         }, 74, 46);
 
@@ -65,7 +65,7 @@ sealed class SettingsForm : Form
         Controls.Add(now);
 
         // --- Slots ---
-        Add(Caption("SLOTS", 20, 246), 20, 246);
+        Add(Caption("ESTADOS", 20, 246), 20, 246);
         var hint = new Label
         {
             Text = "Clic en un atajo y pulsa la combinación · Supr lo quita · Esc cancela",
@@ -183,8 +183,12 @@ sealed class SettingsForm : Form
         try { now = Displays.Snapshot(); }
         catch (Win32Exception) { now = new(); }
         currentView.Monitors = now;
+        int icons = -1;
+        try { icons = Icons.Count(); }
+        catch (Exception ex) when (ex is System.Runtime.InteropServices.COMException or InvalidCastException) { }
         currentList.Text = string.Join("\n", now.Select(m =>
-            $"{m.Name}  ·  {m.Width}×{m.Height}  ·  {m.RotationText}{(m.Primary ? "  ·  principal" : "")}"));
+            $"{m.Name}  ·  {m.Width}×{m.Height}  ·  {m.RotationText}{(m.Primary ? "  ·  principal" : "")}"))
+            + (icons >= 0 ? $"\n\n{icons} iconos en el escritorio" : "");
         for (int i = 0; i < rows.Length; i++)
             rows[i].Update(app.Config.Slots[i], Displays.Matches(now, app.Config.Slots[i].Monitors));
     }
@@ -221,7 +225,7 @@ sealed class SettingsForm : Form
     void OnCaptured(Hotkey hk, int id)
     {
         var cfg = app.Config;
-        // Una combinación solo puede tener un dueño: si ya la usaba otro slot, se le quita.
+        // Una combinación solo puede tener un dueño: si ya la usaba otro estado, se le quita.
         for (int i = 0; i < Config.SlotCount; i++)
         {
             if (i == id || !cfg.Slots[i].Hotkey.SameAs(hk)) continue;
@@ -246,7 +250,7 @@ sealed class SettingsForm : Form
         RefreshHotkeyErrors();
     }
 
-    // ---------- Fila de un slot ----------
+    // ---------- Fila de un estado ----------
 
     sealed class SlotRow : Card
     {
@@ -258,6 +262,8 @@ sealed class SettingsForm : Form
         readonly PillButton save = new("Guardar actual", PillButton.Kind.Secondary);
         readonly PillButton apply = new("Aplicar", PillButton.Kind.Primary);
         readonly PillButton clear = new("✕", PillButton.Kind.Ghost);
+        readonly PartToggle useScreens = new(PartToggle.Glyph.Screens);
+        readonly PartToggle useIcons = new(PartToggle.Glyph.Icons);
         bool active;
 
         public SlotRow(SettingsForm form, int index) : base(Theme.Panel)
@@ -268,16 +274,18 @@ sealed class SettingsForm : Form
 
             preview.SetBounds(54, 8, 84, 36);
             var nameField = new Field(name);
-            nameField.SetBounds(150, 10, 190, 32);
+            nameField.SetBounds(150, 10, 150, 32);
+            useScreens.SetBounds(306, 10, 30, 32);
+            useIcons.SetBounds(340, 10, 30, 32);
             var hotkeyField = new Field(Hotkey);
-            hotkeyField.SetBounds(352, 10, 160, 32);
+            hotkeyField.SetBounds(378, 10, 136, 32);
             save.SetBounds(524, 10, 106, 32);
             apply.SetBounds(638, 10, 72, 32);
             clear.SetBounds(716, 10, 32, 32);
-            Controls.AddRange(new Control[] { preview, nameField, hotkeyField, save, apply, clear });
+            Controls.AddRange(new Control[] { preview, nameField, useScreens, useIcons, hotkeyField, save, apply, clear });
 
             name.Text = app.Config.Slots[index].Name;
-            name.HandleCreated += (_, _) => SendMessage(name.Handle, 0x1501, (IntPtr)1, $"Slot {index + 1}"); // EM_SETCUEBANNER
+            name.HandleCreated += (_, _) => SendMessage(name.Handle, 0x1501, (IntPtr)1, $"Estado {index + 1}"); // EM_SETCUEBANNER
             name.TextChanged += (_, _) => app.Config.Slots[index].Name = name.Text.Trim();
             name.Leave += (_, _) => app.TrySave();
             name.KeyDown += (_, e) => { if (e.KeyCode == Keys.Enter) { e.SuppressKeyPress = true; form.ActiveControl = null; app.TrySave(); } };
@@ -288,8 +296,17 @@ sealed class SettingsForm : Form
             save.Click += (_, _) => app.SaveSlot(index);
             apply.Click += (_, _) => app.ApplySlot(index);
             clear.Click += (_, _) => app.ClearSlot(index);
-            form.tips.SetToolTip(save, "Guarda aquí cómo están colocadas tus pantallas ahora");
-            form.tips.SetToolTip(clear, "Vaciar este slot");
+            useScreens.Toggled += () => Toggle(s => s.UseDisplays = !s.UseDisplays);
+            useIcons.Toggled += () => Toggle(s => s.UseIcons = !s.UseIcons);
+            form.tips.SetToolTip(save, "Guarda aquí cómo están ahora tus pantallas y los iconos del escritorio");
+            form.tips.SetToolTip(clear, "Vaciar este estado");
+        }
+
+        void Toggle(Action<Slot> change)
+        {
+            change(form.app.Config.Slots[index]);
+            form.app.TrySave();
+            Update(form.app.Config.Slots[index], active);
         }
 
         public void Update(Slot slot, bool isActive)
@@ -297,8 +314,17 @@ sealed class SettingsForm : Form
             active = isActive;
             preview.Monitors = slot.Monitors;
             apply.Enabled = clear.Enabled = !slot.IsEmpty;
+            useScreens.Enabled = slot.Monitors.Count > 0;
+            useScreens.Checked = slot.UseDisplays;
+            useIcons.Enabled = slot.Icons.Count > 0;
+            useIcons.Checked = slot.UseIcons;
+            form.tips.SetToolTip(useScreens, slot.Monitors.Count == 0 ? "Sin pantallas guardadas"
+                : (slot.UseDisplays ? "Aplica las pantallas (clic para no aplicarlas)" : "No aplica las pantallas (clic para aplicarlas)"));
+            form.tips.SetToolTip(useIcons, slot.Icons.Count == 0 ? "Sin iconos guardados"
+                : (slot.UseIcons ? $"Coloca {slot.Icons.Count} iconos (clic para no colocarlos)" : $"No coloca los {slot.Icons.Count} iconos (clic para colocarlos)"));
             form.tips.SetToolTip(preview, slot.IsEmpty ? "Vacío"
-                : string.Join("\n", slot.Monitors.Select(m => $"{m.Name}: {m.RotationText}, en ({m.X}, {m.Y})")));
+                : string.Join("\n", slot.Monitors.Select(m => $"{m.Name}: {m.RotationText}, en ({m.X}, {m.Y})"))
+                  + (slot.Icons.Count > 0 ? $"\n{slot.Icons.Count} iconos" : ""));
             Border = isActive ? Theme.Green : null;
             Invalidate();
         }
