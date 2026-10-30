@@ -1,0 +1,35 @@
+# Publishing a release on GitHub (tag like v1.0.0) builds MajinDesktop and attaches
+# the installer and the portable exe.
+name: Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to build (for example v1.0.0)
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TAG }}
+
+      - name: Build the app and the installer
+        shell: pwsh
+        run: ./build.ps1 -Version ($env:TAG -replace '^v', '')
+
+      - name: Attach them to the release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$env:TAG" dist/MajinDesktop-Setup-*.exe dist/MajinDesktop.exe --clobber
