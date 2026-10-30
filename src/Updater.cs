@@ -66,6 +66,7 @@ sealed class Updater : IDisposable
                     Post($"MajinDesktop {Available} disponible", "Descárgala desde el menú de la bandeja");
                     return;
                 }
+                Log.Info($"Actualizando a {Available}");
                 Post($"Actualizando a {Available}", "MajinDesktop se reiniciará en unos segundos");
                 string file = Path.Combine(Path.GetTempPath(), $"MajinDesktop-Setup-{Available}.exe");
                 using (var web = Client()) web.DownloadFile(setupUrl, file);
@@ -73,6 +74,7 @@ sealed class Updater : IDisposable
             }
             catch (Exception ex) when (ex is WebException or IOException or FormatException or System.ComponentModel.Win32Exception)
             {
+                Log.Error("Actualización", ex);
                 if (manual) Post("No se pudo buscar actualizaciones", ex.Message);
             }
             finally { Interlocked.Exchange(ref busy, 0); }

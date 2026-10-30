@@ -3,18 +3,26 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Runtime.Serialization;
 using static MajinDesktop.Native;
 
 namespace MajinDesktop;
 
 // Estado de una pantalla dentro de un slot: solo posición y orientación (más el tamaño, para dibujarla).
+[DataContract]
 sealed class MonitorState
 {
-    public string Path = "";   // ruta del monitor en ese puerto: identificador estable entre reinicios
-    public string Edid = "";   // fabricante:producto, respaldo si cambias de puerto
-    public string Name = "";
-    public int X, Y, Width, Height;   // huella en el escritorio (ya rotada)
-    public int Rotation = 1;   // 1=0°, 2=90°, 3=180°, 4=270°
+    [DataMember(Name = "path", Order = 1)] public string Path = "";   // ruta del monitor en ese puerto: estable entre reinicios
+    [DataMember(Name = "edid", Order = 2)] public string Edid = "";   // fabricante:producto, respaldo si cambias de puerto
+    [DataMember(Name = "name", Order = 3)] public string Name = "";
+    [DataMember(Name = "x", Order = 4)] public int X;
+    [DataMember(Name = "y", Order = 5)] public int Y;
+    [DataMember(Name = "width", Order = 6)] public int Width;     // huella en el escritorio (ya rotada)
+    [DataMember(Name = "height", Order = 7)] public int Height;
+    [DataMember(Name = "rotation", Order = 8)] public int Rotation = 1;   // 1=0°, 2=90°, 3=180°, 4=270°
+
+    [OnDeserializing]
+    void Defaults(StreamingContext _) { Path = Edid = Name = ""; Rotation = 1; }
 
     public bool Primary => X == 0 && Y == 0;
     public bool Portrait => Rotation == 2 || Rotation == 4;
@@ -27,9 +35,7 @@ sealed class MonitorState
         _ => "horizontal",
     };
 
-    public string Serialize() =>
-        string.Join("|", Rotation, X, Y, Width, Height, Edid, Name.Replace("|", "/"), Path);
-
+    // Formato de config.ini (v0.1), solo para migrarlo.
     public static MonitorState? Parse(string s)
     {
         var p = s.Split(new[] { '|' }, 8);
@@ -68,7 +74,7 @@ static class Displays
         }
     }
 
-    static int SourceModeIndex(PATH_INFO p, MODE_INFO[] modes)
+    internal static int SourceModeIndex(PATH_INFO p, MODE_INFO[] modes)
     {
         int idx = (int)p.sourceInfo.modeInfoIdx;
         return idx >= 0 && idx < modes.Length && modes[idx].infoType == DISPLAYCONFIG_MODE_INFO_TYPE_SOURCE ? idx : -1;
@@ -145,67 +151,9 @@ static class Displays
         {
             Query(out var paths, out var modes);
             var current = new MonitorState?[paths.Length];
-            var all = new List<MonitorState>();
-            for (int i = 0; i < paths.Length; i++)
-            {
-                current[i] = Describe(paths[i], modes, i + 1);
-                if (current[i] != null) all.Add(current[i]!);
-            }
+            for (int i = 0; i < paths.Length; i++) current[i] = Describe(paths[i], modes, i + 1);
 
-            bool changed = false;
-            var updated = new HashSet<int>();  // índices de modos de origen ya colocados
-            for (int i = 0; i < paths.Length; i++)
-            {
-                if (current[i] == null) continue;
-                var s = Find(slot, current[i]!, all);
-                if (s == null) continue;
-
-                // El modo de origen no se toca: la rotación va en la ruta y Windows gira el escritorio.
-                int idx = SourceModeIndex(paths[i], modes);
-                if (paths[i].targetInfo.rotation != (uint)s.Rotation) changed = true;
-                paths[i].targetInfo.rotation = (uint)s.Rotation;
-
-                var pos = modes[idx].sourceMode.position;
-                if (pos.x != s.X || pos.y != s.Y) changed = true;
-                modes[idx].sourceMode.position = new POINTL { x = s.X, y = s.Y };
-                updated.Add(idx);
-            }
-            if (updated.Count == 0) return ApplyStatus.NoMonitorsFound;
-
-            var sources = Enumerable.Range(0, paths.Length)
-                .Select(i => SourceModeIndex(paths[i], modes)).Where(i => i >= 0).Distinct().ToList();
-
-            // Huella de cada origen en el escritorio con su rotación nueva.
-            Rect Footprint(int idx)
-            {
-                var sm = modes[idx].sourceMode;
-                bool rotated = paths.Any(p => SourceModeIndex(p, modes) == idx && p.targetInfo.rotation is 2 or 4);
-                return new Rect(sm.position.x, sm.position.y, (int)(rotated ? sm.height : sm.width), (int)(rotated ? sm.width : sm.height));
-            }
-
-            // Pantallas que no están en el slot: si chocan con alguna colocada, se mandan a la derecha.
-            foreach (int idx in sources.Where(i => !updated.Contains(i)))
-            {
-                var me = Footprint(idx);
-                if (!sources.Any(o => o != idx && me.Overlaps(Footprint(o)))) continue;
-                int right = sources.Where(o => o != idx).Max(o => Footprint(o).Right);
-                modes[idx].sourceMode.position = new POINTL { x = right, y = 0 };
-                changed = true;
-            }
-
-            // Windows exige que la principal esté en (0,0). Si la principal del slot no está conectada,
-            // se desplaza todo para que la pantalla más cercana al origen pase a serlo.
-            if (!sources.Any(i => modes[i].sourceMode.position.x == 0 && modes[i].sourceMode.position.y == 0))
-            {
-                var anchor = modes[sources.OrderBy(i => Math.Abs(modes[i].sourceMode.position.x) + Math.Abs(modes[i].sourceMode.position.y)).First()].sourceMode.position;
-                foreach (int i in sources)
-                {
-                    modes[i].sourceMode.position.x -= anchor.x;
-                    modes[i].sourceMode.position.y -= anchor.y;
-                }
-                changed = true;
-            }
-
+            if (!Plan(paths, modes, current, slot, out bool changed)) return ApplyStatus.NoMonitorsFound;
             if (!changed && !validateOnly) return ApplyStatus.AlreadyActive;
 
             uint flags = SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_ALLOW_CHANGES |
@@ -220,6 +168,69 @@ static class Displays
             error = Explain(ex.NativeErrorCode);
             return ApplyStatus.Failed;
         }
+    }
+
+    // Parte pura de Apply (sin llamadas a Windows, se prueba en tests/): coloca cada pantalla del slot
+    // en la configuración actual. Devuelve false si ninguna pantalla del slot está conectada.
+    internal static bool Plan(PATH_INFO[] paths, MODE_INFO[] modes, MonitorState?[] current, IList<MonitorState> slot, out bool changed)
+    {
+        changed = false;
+        var all = current.Where(c => c != null).Select(c => c!).ToList();
+        var updated = new HashSet<int>();  // índices de modos de origen ya colocados
+        for (int i = 0; i < paths.Length; i++)
+        {
+            if (current[i] == null) continue;
+            var s = Find(slot, current[i]!, all);
+            if (s == null) continue;
+
+            // El modo de origen no se toca: la rotación va en la ruta y Windows gira el escritorio.
+            int idx = SourceModeIndex(paths[i], modes);
+            if (idx < 0) continue;
+            if (paths[i].targetInfo.rotation != (uint)s.Rotation) changed = true;
+            paths[i].targetInfo.rotation = (uint)s.Rotation;
+
+            var pos = modes[idx].sourceMode.position;
+            if (pos.x != s.X || pos.y != s.Y) changed = true;
+            modes[idx].sourceMode.position = new POINTL { x = s.X, y = s.Y };
+            updated.Add(idx);
+        }
+        if (updated.Count == 0) return false;
+
+        var sources = Enumerable.Range(0, paths.Length)
+            .Select(i => SourceModeIndex(paths[i], modes)).Where(i => i >= 0).Distinct().ToList();
+
+        // Huella de cada origen en el escritorio con su rotación nueva.
+        Rect Footprint(int idx)
+        {
+            var sm = modes[idx].sourceMode;
+            bool rotated = paths.Any(p => SourceModeIndex(p, modes) == idx && p.targetInfo.rotation is 2 or 4);
+            return new Rect(sm.position.x, sm.position.y, (int)(rotated ? sm.height : sm.width), (int)(rotated ? sm.width : sm.height));
+        }
+
+        // Pantallas que no están en el slot: si chocan con alguna colocada, se mandan a la derecha.
+        foreach (int idx in sources.Where(i => !updated.Contains(i)))
+        {
+            var me = Footprint(idx);
+            if (!sources.Any(o => o != idx && me.Overlaps(Footprint(o)))) continue;
+            int right = sources.Where(o => o != idx).Max(o => Footprint(o).Right);
+            modes[idx].sourceMode.position = new POINTL { x = right, y = 0 };
+            changed = true;
+        }
+
+        // Windows exige que la principal esté en (0,0). Si la principal del slot no está conectada,
+        // se desplaza todo para que la pantalla más cercana al origen pase a serlo.
+        if (!sources.Any(i => modes[i].sourceMode.position.x == 0 && modes[i].sourceMode.position.y == 0))
+        {
+            var anchor = modes[sources.OrderBy(i => Math.Abs(modes[i].sourceMode.position.x) + Math.Abs(modes[i].sourceMode.position.y)).First()].sourceMode.position;
+            foreach (int i in sources)
+            {
+                modes[i].sourceMode.position.x -= anchor.x;
+                modes[i].sourceMode.position.y -= anchor.y;
+            }
+            changed = true;
+        }
+
+        return true;
     }
 
     readonly struct Rect

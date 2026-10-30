@@ -16,6 +16,7 @@ sealed class SettingsForm : Form
     readonly Label currentList = new() { AutoSize = false, ForeColor = Theme.Text, Font = Theme.Body };
     readonly SlotRow[] rows = new SlotRow[Config.SlotCount];
     readonly HotkeyBox cycleBox = new();
+    readonly HotkeyBox undoBox = new();
     readonly Toggle autoStart = new("Iniciar con Windows");
     readonly Label warn = new() { AutoSize = false, ForeColor = Theme.Red, Font = Theme.Small };
     readonly ToolTip tips = new() { OwnerDraw = true, InitialDelay = 300 };
@@ -80,23 +81,31 @@ sealed class SettingsForm : Form
         }
 
         // --- Pie ---
-        Add(new Label { Text = "Siguiente slot", AutoSize = true, ForeColor = Theme.Text }, 20, 807);
+        Add(new Label { Text = "Siguiente", AutoSize = true, ForeColor = Theme.Text }, 20, 807);
         var cycleField = new Field(cycleBox);
-        cycleField.SetBounds(128, 800, 170, 32);
+        cycleField.SetBounds(92, 800, 170, 32);
         Controls.Add(cycleField);
         WireHotkey(cycleBox, TrayApp.CycleId);
         cycleBox.Value = app.Config.Cycle;
 
-        autoStart.SetBounds(330, 800, 220, 32);
+        Add(new Label { Text = "Deshacer", AutoSize = true, ForeColor = Theme.Text }, 286, 807);
+        var undoField = new Field(undoBox);
+        undoField.SetBounds(356, 800, 190, 32);
+        Controls.Add(undoField);
+        WireHotkey(undoBox, TrayApp.UndoId);
+        undoBox.Value = app.Config.Undo;
+        tips.SetToolTip(undoBox, "Vuelve a como estaban las pantallas antes del último cambio");
+
+        autoStart.SetBounds(574, 800, 206, 32);
         autoStart.Toggled += app.ToggleAutoStart;
         Controls.Add(autoStart);
 
         var folder = new LinkLabel
         {
-            Text = "Abrir carpeta de datos", AutoSize = false, TextAlign = ContentAlignment.MiddleRight,
+            Text = "Abrir carpeta de datos", AutoSize = false, TextAlign = ContentAlignment.TopRight,
             LinkColor = Theme.Muted, ActiveLinkColor = Theme.Bright, LinkBehavior = LinkBehavior.HoverUnderline,
         };
-        folder.SetBounds(580, 800, 200, 32);
+        folder.SetBounds(580, 20, 200, 24);
         folder.LinkClicked += (_, _) =>
         {
             System.IO.Directory.CreateDirectory(Config.Dir);
@@ -194,6 +203,9 @@ sealed class SettingsForm : Form
         bool cycleFailed = app.FailedHotkeys.Contains(TrayApp.CycleId);
         cycleBox.SetError(cycleFailed);
         if (cycleFailed) bad.Add(app.Config.Cycle.ToString());
+        bool undoFailed = app.FailedHotkeys.Contains(TrayApp.UndoId);
+        undoBox.SetError(undoFailed);
+        if (undoFailed) bad.Add(app.Config.Undo.ToString());
         warn.Text = bad.Count == 0 ? "" : $"Otra aplicación ya usa: {string.Join(", ", bad)}. Elige otra combinación.";
     }
 
@@ -221,7 +233,13 @@ sealed class SettingsForm : Form
             cfg.Cycle = new Hotkey();
             cycleBox.Value = cfg.Cycle;
         }
+        if (id != TrayApp.UndoId && cfg.Undo.SameAs(hk))
+        {
+            cfg.Undo = new Hotkey();
+            undoBox.Value = cfg.Undo;
+        }
         if (id == TrayApp.CycleId) cfg.Cycle = hk;
+        else if (id == TrayApp.UndoId) cfg.Undo = hk;
         else cfg.Slots[id].Hotkey = hk;
         app.TrySave();
         app.RegisterHotkeys();

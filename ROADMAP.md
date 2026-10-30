@@ -2,10 +2,11 @@
 
 El objetivo es que MajinDesktop pase de "slots de pantallas" a un **gestor de estados del escritorio**. Un estado es una foto de cómo quieres tu PC para algo concreto: escritorio de trabajo, jugar en la TV o streaming. Además tendrá un **organizador visual** del escritorio pensado sobre todo para los accesos directos de juegos.
 
-Hay dos reglas que se mantienen en todas las fases:
+Hay tres reglas que se mantienen en todas las fases:
 
 1. **Ligero.** La parte residente (bandeja + atajos) sigue en unos pocos MB y 0 % de CPU. Las ventanas pesadas (organizador, biblioteca) solo existen mientras están abiertas y se liberan al cerrarlas.
 2. **Nada irreversible.** Todo lo que cambia el escritorio se puede deshacer, y todo lo que se borra va a la papelera de Windows.
+3. **Los fondos no se tocan.** De eso se encarga Wallpaper Engine: MajinDesktop no cambia el fondo ni pinta nada en el escritorio.
 
 ---
 
@@ -17,7 +18,6 @@ Un estado tiene un nombre, un atajo y un color, y guarda solo las partes que tú
 |---|---|---|
 | Pantallas | posición, orientación, principal *(ya está)*; encendida o apagada, resolución, Hz, HDR | 0.1 / 0.4 |
 | Iconos | dónde está cada icono del escritorio, **relativo a cada pantalla** | 0.3 |
-| Fondo | fondo de cada pantalla y cómo se ajusta | 0.3 |
 | Audio | salida de sonido predeterminada (por ejemplo, la TV por HDMI) | 0.4 |
 | Escritorio | tamaño de los iconos, mostrarlos u ocultarlos, ocultar la barra de tareas | 0.3 / 0.4 |
 | Acciones | abrir o cerrar programas, Steam Big Picture, un comando | 0.7 |
@@ -26,20 +26,15 @@ Ejemplo, **Modo TV**: solo la TV encendida, HDR activado, audio por la TV, barra
 
 ---
 
-## v0.2 · Cimientos
+## v0.2 · Cimientos ✅
 
-Son mejoras al programa actual que preparan todo lo demás.
-
-- **Prueba real de cambio de pantallas.** Ya está validado con Windows (acepta las disposiciones), pero falta usarlo a diario y pulir lo que salga.
-- **Deshacer el último cambio.** Antes de aplicar un estado se guarda cómo estaba todo, y un atajo (`Ctrl+Alt+Shift+Retroceso`) lo devuelve.
-- **Configuración en JSON.** Hace falta porque los estados van a tener muchas partes. Se usa `DataContractJsonSerializer`, que ya viene con Windows, y el `config.ini` actual se migra solo.
-- **Escala por pantalla (Per-Monitor DPI v2)**, para que la ventana se vea nítida al moverla a una pantalla con otra escala.
+- **Deshacer el último cambio** con `Ctrl+Alt+Shift+Retroceso`. Antes de aplicar un slot se guarda cómo estaba todo; pulsarlo otra vez rehace el cambio.
+- **Configuración en JSON** (`config.json`), preparada para los estados con varias partes. El `config.ini` de la 0.1 se migra solo. Si el archivo se estropea, se aparta y la app arranca igual.
 - **Registro de errores** en `%APPDATA%\MajinDesktop\log.txt`.
-- **Pruebas automáticas** de la lógica (reconocer monitores, mover las pantallas que chocan, migrar la configuración) y compilación en cada push.
+- **Pruebas automáticas** de la lógica (colocación de pantallas, atajos, configuración y migración). Se ejecutan en cada compilación y en cada push.
+- La prueba de cambio de pantallas contra Windows ya está hecha (acepta girar pantallas y cambiar la principal); queda el uso diario.
 
-*Hecho cuando:* se puede cambiar de estado y deshacer el cambio sin tocar el ratón.
-
-## v0.3 · Iconos y fondo dentro de los estados
+## v0.3 · Iconos dentro de los estados
 
 Esta fase arregla un problema clásico: al cambiar de pantallas, Windows desordena los iconos del escritorio.
 
@@ -47,7 +42,6 @@ Esta fase arregla un problema clásico: al cambiar de pantallas, Windows desorde
 - **Posiciones relativas a cada pantalla.** Cada icono se guarda como "pantalla + distancia a su esquina", no en coordenadas absolutas. Así, al cambiar de pantalla principal o de orden, cada icono sigue en su monitor.
 - **Restauración tras cada cambio de pantallas.** Se espera a que Explorer termine de reacomodarse y se recolocan los iconos.
 - Si están activadas, se desactivan *Organizar automáticamente* y *Alinear a la cuadrícula* mientras se recolocan, y luego se vuelven a dejar como estaban.
-- **Fondo por pantalla** con `IDesktopWallpaper`. Identifica cada monitor por la misma ruta que ya usa la app.
 - **Tamaño de iconos** (`IFolderView2.SetViewModeAndIconSize`) y mostrar u ocultar los iconos.
 
 *Hecho cuando:* pasas de 3 pantallas a "solo la central" y vuelves, y cada icono acaba exactamente donde estaba.
@@ -65,14 +59,14 @@ Esta fase arregla un problema clásico: al cambiar de pantallas, Windows desorde
 
 ## v0.5 · Organizador visual del escritorio
 
-Es una ventana nueva con una **representación de tu escritorio**: tus pantallas a escala, con su fondo real en miniatura, la barra de tareas y cada icono en su sitio.
+Es una ventana nueva con una **representación de tu escritorio**: tus pantallas a escala, la barra de tareas y cada icono en su sitio.
 
 - **Seleccionar** con clic, `Ctrl`+clic o un rectángulo. **Arrastrar** iconos, sueltos o en grupo, incluso a otra pantalla.
 - **Herramientas de orden:** alinear, repartir, ajustar a la cuadrícula real de Windows, compactar huecos y ordenar por nombre, tipo, plataforma o fecha.
 - **Zonas** al estilo Fences, pero sin ventanas extra encima del escritorio. Por ejemplo "Juegos Steam" en la pantalla derecha o "Trabajo" en la izquierda. Son rectángulos con nombre que dibujas en el organizador, con reglas que deciden qué va en cada una (plataforma, tipo, carpeta, nombre). El botón *Ordenar* coloca cada icono en su zona.
 - **Iconos nuevos:** cuando aparece un acceso directo nuevo en el escritorio (por ejemplo, al instalar un juego), se coloca solo en su zona.
 - **Vista previa y aplicar.** Los cambios se ven en el organizador y se aplican al escritorio de una vez, con deshacer.
-- Más adelante, de forma experimental, se podrán dibujar las zonas de verdad en el escritorio, detrás de los iconos (como hacen los fondos animados). Va al final porque es lo más delicado.
+- Las zonas solo existen en el organizador: no se dibuja nada en el escritorio real, para no interferir con Wallpaper Engine.
 
 *Hecho cuando:* desordenas el escritorio, pulsas *Ordenar* y cada juego vuelve a su zona.
 
@@ -114,7 +108,7 @@ Es una ventana nueva con una **representación de tu escritorio**: tus pantallas
 ## Decisiones técnicas
 
 - **Se sigue con C# + WinForms sobre .NET Framework 4.8**, sin dependencias. Electron (como MajinGallery) tendría más de 100 MB residentes y chocaría con "ligero". WPF no aporta lo suficiente para lo que cuesta. El organizador será un lienzo dibujado a mano, igual que las miniaturas de pantallas que ya existen.
-- **Todo con APIs de Windows por COM:** `IFolderView`, `IDesktopWallpaper`, `IShellLink` y la interfaz de audio. Se declaran a mano en el código, sin librerías de terceros.
+- **Todo con APIs de Windows por COM:** `IFolderView`, `IShellLink` y la interfaz de audio. Se declaran a mano en el código, sin librerías de terceros.
 - **Instalador propio**, construido con el mismo compilador: se instala por usuario, sin permisos de administrador, y se desinstala desde *Aplicaciones instaladas*. La actualización automática (ya incluida desde la 0.1.0) descarga el instalador de la última release y lo lanza con `/S`.
 
 ## Riesgos conocidos
@@ -127,17 +121,17 @@ Es una ventana nueva con una **representación de tu escritorio**: tus pantallas
 
 ## Para más adelante (sin fecha)
 
-- Zonas dibujadas en el escritorio real.
 - Iconos desde SteamGridDB (necesita clave de API).
 - Elegir estado con el mando en la TV, al estilo del modo TV de MajinGallery.
+- Ventanas nítidas en pantallas con distinta escala (Per-Monitor DPI v2). Ahora mismo tus tres pantallas están al 100 %, así que no hace falta.
 - Escala de Windows (100 %, 125 %…) por estado. Solo se puede con una API no documentada, así que tiene más riesgo.
 
 ---
 
-**English summary:** MajinDesktop will grow from monitor-layout slots into a desktop state manager. A state can hold monitors (including on/off, resolution, refresh rate and HDR), desktop icon positions stored per monitor, per-monitor wallpaper, default audio output and actions. Planned releases:
+**English summary:** MajinDesktop will grow from monitor-layout slots into a desktop state manager. A state can hold monitors (including on/off, resolution, refresh rate and HDR), desktop icon positions stored per monitor, default audio output and actions. Planned releases:
 
-- **v0.2** foundations: undo, JSON config, per-monitor DPI.
-- **v0.3** icons and wallpaper inside states.
+- **v0.2** foundations: undo, JSON config, error log, automated tests (done).
+- **v0.3** desktop icons inside states.
 - **v0.4** advanced monitors, audio and a TV mode with a safety revert.
 - **v0.5** a visual desktop organizer with Fences-style zones.
 - **v0.6** game shortcuts: library scan, batch creation, icon fixing and batch operations with undo.

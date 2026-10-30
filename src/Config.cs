@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.Serialization;
+using System.Runtime.Serialization.Json;
 using System.Text;
 using System.Windows.Forms;
 using Microsoft.Win32;
@@ -39,7 +41,7 @@ sealed class Hotkey
         >= Keys.NumPad0 and <= Keys.NumPad9 => "Num" + (k - Keys.NumPad0),
         Keys.Oemplus => "+", Keys.OemMinus => "-", Keys.Oemcomma => ",", Keys.OemPeriod => ".",
         Keys.Next => "AvPág", Keys.Prior => "RePág", Keys.Insert => "Insert", Keys.Delete => "Supr",
-        Keys.Home => "Inicio", Keys.End => "Fin", Keys.Space => "Espacio",
+        Keys.Home => "Inicio", Keys.End => "Fin", Keys.Space => "Espacio", Keys.Back => "Retroceso",
         Keys.Left => "←", Keys.Right => "→", Keys.Up => "↑", Keys.Down => "↓",
         _ => k.ToString(),
     };
@@ -66,14 +68,23 @@ sealed class Hotkey
     public bool SameAs(Hotkey o) => !IsEmpty && Key == o.Key && Modifiers == o.Modifiers;
 }
 
+[DataContract]
 sealed class Slot
 {
-    public string Name = "";
+    [DataMember(Name = "name", Order = 1)] public string Name = "";
     public Hotkey Hotkey = new();
-    public List<MonitorState> Monitors = new();
+    [DataMember(Name = "monitors", Order = 3)] public List<MonitorState> Monitors = new();
     public bool IsEmpty => Monitors.Count == 0;
+
+    [DataMember(Name = "hotkey", Order = 2)]
+    string HotkeyText { get => Hotkey.Serialize(); set => Hotkey = Hotkey.Parse(value); }
+
+    // El serializador no ejecuta constructores ni inicializadores: se rellenan aquí los valores por defecto.
+    [OnDeserializing]
+    void Defaults(StreamingContext _) { Name = ""; Hotkey = new(); Monitors = new(); }
 }
 
+[DataContract]
 sealed class Config
 {
     public const int SlotCount = 9;
@@ -81,27 +92,72 @@ sealed class Config
     public static readonly string Dir = Environment.GetEnvironmentVariable("MAJINDESKTOP_DATA") is { Length: > 0 } custom
         ? custom
         : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MajinDesktop");
-    static readonly string FilePath = Path.Combine(Dir, "config.ini");
+    public static string FilePath => Path.Combine(Dir, "config.json");
+    static string LegacyPath => Path.Combine(Dir, "config.ini");
 
-    public Slot[] Slots = Enumerable.Range(0, SlotCount).Select(_ => new Slot()).ToArray();
+    [DataMember(Name = "version", Order = 1)] public int Version = 2;
+    [DataMember(Name = "slots", Order = 6)] public Slot[] Slots = NewSlots();
     public Hotkey Cycle = new();
-    public int Last = -1;   // último slot aplicado (para el atajo de ciclo)
+    public Hotkey Undo = new();
+    [DataMember(Name = "last", Order = 4)] public int Last = -1;   // último slot aplicado (para el atajo de ciclo)
+    [DataMember(Name = "previous", Order = 5)] public List<MonitorState>? Previous = null; // lo que había antes del último cambio
+
+    [DataMember(Name = "cycle", Order = 2)]
+    string CycleText { get => Cycle.Serialize(); set => Cycle = Hotkey.Parse(value); }
+
+    [DataMember(Name = "undo", Order = 3)]
+    string UndoText { get => Undo.Serialize(); set => Undo = Hotkey.Parse(value); }
+
+    [OnDeserializing]
+    void Defaults(StreamingContext _) { Version = 2; Slots = NewSlots(); Cycle = new(); Undo = new(); Last = -1; }
+
+    static Slot[] NewSlots() => Enumerable.Range(0, SlotCount).Select(_ => new Slot()).ToArray();
+
+    static Hotkey Combo(Keys key) => new() { Ctrl = true, Alt = true, Shift = true, Key = key };
 
     public static Config Load()
     {
-        var c = new Config();
-        if (!File.Exists(FilePath))
+        if (File.Exists(FilePath))
         {
-            // Primera vez: Ctrl+Alt+Shift+1..9 para cada slot y Ctrl+Alt+Shift+0 para ir al siguiente.
-            // (Ctrl+Alt solo choca con AltGr en teclado español: AltGr+2 = @, AltGr+3 = #.)
-            for (int i = 0; i < SlotCount; i++)
-                c.Slots[i].Hotkey = new Hotkey { Ctrl = true, Alt = true, Shift = true, Key = Keys.D1 + i };
-            c.Cycle = new Hotkey { Ctrl = true, Alt = true, Shift = true, Key = Keys.D0 };
+            Config c;
+            try
+            {
+                using var stream = File.OpenRead(FilePath);
+                c = (Config)new DataContractJsonSerializer(typeof(Config)).ReadObject(stream);
+            }
+            catch (SerializationException ex)
+            {
+                // Archivo roto (por ejemplo, editado a mano): se aparta y se empieza de cero.
+                string broken = Path.Combine(Dir, $"config.broken-{DateTime.Now:yyyyMMdd-HHmmss}.json");
+                File.Move(FilePath, broken);
+                Log.Error("config.json no se pudo leer, apartado como " + Path.GetFileName(broken), ex);
+                return Load();
+            }
+            // Siempre 9 slots, aunque el archivo traiga otros (editado a mano o de otra versión).
+            if (c.Slots.Length != SlotCount)
+                c.Slots = c.Slots.Concat(NewSlots()).Take(SlotCount).Select(sl => sl ?? new Slot()).ToArray();
             return c;
         }
+        if (File.Exists(LegacyPath))
+        {
+            var c = LoadLegacy();
+            c.Save();
+            File.Move(LegacyPath, LegacyPath + ".bak");
+            return c;
+        }
+        // Primera vez: Ctrl+Alt+Shift+1..9 para cada slot, +0 para ir al siguiente y +Retroceso para deshacer.
+        // (Ctrl+Alt solo choca con AltGr en teclado español: AltGr+2 = @, AltGr+3 = #.)
+        var fresh = new Config { Cycle = Combo(Keys.D0), Undo = Combo(Keys.Back) };
+        for (int i = 0; i < SlotCount; i++) fresh.Slots[i].Hotkey = Combo(Keys.D1 + i);
+        return fresh;
+    }
 
+    // config.ini de la v0.1.
+    static Config LoadLegacy()
+    {
+        var c = new Config { Undo = Combo(Keys.Back) };
         Slot? slot = null;
-        foreach (var raw in File.ReadAllLines(FilePath, Encoding.UTF8))
+        foreach (var raw in File.ReadAllLines(LegacyPath, Encoding.UTF8))
         {
             var line = raw.Trim();
             if (line.Length == 0 || line[0] == '#') continue;
@@ -128,21 +184,14 @@ sealed class Config
 
     public void Save()
     {
-        var sb = new StringBuilder();
-        sb.AppendLine("# MajinDesktop: monitor = rotación|x|y|ancho|alto|edid|nombre|ruta");
-        sb.AppendLine("cycle=" + Cycle.Serialize());
-        sb.AppendLine("last=" + Last);
-        for (int i = 0; i < SlotCount; i++)
-        {
-            var s = Slots[i];
-            sb.AppendLine().AppendLine($"[slot{i + 1}]");
-            sb.AppendLine("name=" + s.Name);
-            sb.AppendLine("hotkey=" + s.Hotkey.Serialize());
-            foreach (var m in s.Monitors) sb.AppendLine("monitor=" + m.Serialize());
-        }
         Directory.CreateDirectory(Dir);
         string tmp = FilePath + ".tmp";
-        File.WriteAllText(tmp, sb.ToString(), new UTF8Encoding(false));
+        using (var stream = File.Create(tmp))
+        using (var writer = JsonReaderWriterFactory.CreateJsonWriter(stream, new UTF8Encoding(false), false, true, "  "))
+        {
+            new DataContractJsonSerializer(typeof(Config)).WriteObject(writer, this);
+            writer.Flush();
+        }
         if (File.Exists(FilePath)) File.Replace(tmp, FilePath, null);
         else File.Move(tmp, FilePath);
     }

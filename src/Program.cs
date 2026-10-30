@@ -22,10 +22,15 @@ static class Program
             return 0;
         }
 
-        bool firstRun = !File.Exists(Path.Combine(Config.Dir, "config.ini"));
+        bool firstRun = !File.Exists(Config.FilePath) && !File.Exists(Path.Combine(Config.Dir, "config.ini"));
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
         ToolStripManager.Renderer = new DarkMenuRenderer();
+
+        Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+        Application.ThreadException += (_, e) => Log.Error("Error no controlado", e.Exception);
+        AppDomain.CurrentDomain.UnhandledException += (_, e) => Log.Error("Error fatal: " + e.ExceptionObject);
+        Log.Info("Inicio " + Application.ProductVersion);
 
         var app = new TrayApp(firstRun);
         ThreadPool.RegisterWaitForSingleObject(showSignal, (_, _) => app.PostShow(), null, -1, false);

@@ -1,0 +1,17 @@
+# Every push and pull request runs the tests and builds both executables.
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Tests and build
+        shell: pwsh
+        run: ./build.ps1

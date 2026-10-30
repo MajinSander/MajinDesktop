@@ -11,9 +11,10 @@ namespace MajinDesktop;
 sealed class TrayApp : ApplicationContext
 {
     public const int CycleId = 100;
+    public const int UndoId = 101;
 
     public readonly Config Config;
-    public readonly HashSet<int> FailedHotkeys = new(); // índices de slot (o CycleId) que Windows no dejó registrar
+    public readonly HashSet<int> FailedHotkeys = new(); // índices de slot (o CycleId/UndoId) que Windows no dejó registrar
     readonly NotifyIcon tray;
     readonly HotkeyWindow hotkeys;
     readonly ContextMenuStrip menu = new() { Font = Theme.Body, ShowImageMargin = false, ShowCheckMargin = true };
@@ -47,6 +48,8 @@ sealed class TrayApp : ApplicationContext
         for (int i = 0; i < Config.SlotCount; i++)
             if (!hotkeys.Register(i + 1, Config.Slots[i].Hotkey)) FailedHotkeys.Add(i);
         if (!hotkeys.Register(CycleId, Config.Cycle)) FailedHotkeys.Add(CycleId);
+        if (!hotkeys.Register(UndoId, Config.Undo)) FailedHotkeys.Add(UndoId);
+        if (FailedHotkeys.Count > 0) Log.Info("Atajos ocupados por otra app: " + string.Join(", ", FailedHotkeys));
     }
 
     // Mientras se edita un atajo hay que soltarlos todos, si no Windows se "come" la combinación.
@@ -55,6 +58,7 @@ sealed class TrayApp : ApplicationContext
     void OnHotkey(int id)
     {
         if (id == CycleId) Cycle();
+        else if (id == UndoId) Undo();
         else if (id >= 1 && id <= Config.SlotCount) ApplySlot(id - 1);
     }
 
@@ -69,12 +73,14 @@ sealed class TrayApp : ApplicationContext
             osd.Flash(title, "Slot vacío: guarda primero una disposición en él", null, Theme.Muted);
             return;
         }
+        var before = TrySnapshot();
         var status = Displays.Apply(slot.Monitors, false, out string error);
         switch (status)
         {
             case ApplyStatus.Applied:
             case ApplyStatus.AlreadyActive:
                 Config.Last = i;
+                if (status == ApplyStatus.Applied && before != null) Config.Previous = before;
                 TrySave();
                 osd.Flash(title, status == ApplyStatus.Applied ? "Disposición aplicada" : "Ya estaba activa", slot.Monitors, Theme.Green);
                 break;
@@ -82,10 +88,50 @@ sealed class TrayApp : ApplicationContext
                 osd.Flash(title, "Ninguna de sus pantallas está conectada ahora", slot.Monitors, Theme.Red);
                 break;
             default:
+                Log.Error($"Aplicar slot {i + 1}: {error}");
                 osd.Flash(title, error, slot.Monitors, Theme.Red);
                 break;
         }
         settings?.RefreshSlots();
+    }
+
+    // Vuelve a como estaba todo antes del último cambio. Pulsarlo otra vez rehace el cambio.
+    public void Undo()
+    {
+        var previous = Config.Previous;
+        if (previous == null || previous.Count == 0)
+        {
+            osd.Flash("Deshacer", "No hay ningún cambio que deshacer", null, Theme.Muted);
+            return;
+        }
+        var before = TrySnapshot();
+        var status = Displays.Apply(previous, false, out string error);
+        switch (status)
+        {
+            case ApplyStatus.Applied:
+                Config.Previous = before;
+                Config.Last = ActiveSlot() ?? -1;
+                TrySave();
+                osd.Flash("Deshecho", "Las pantallas vuelven a estar como antes", previous, Theme.Green);
+                break;
+            case ApplyStatus.AlreadyActive:
+                osd.Flash("Deshacer", "Las pantallas ya están así", previous, Theme.Muted);
+                break;
+            case ApplyStatus.NoMonitorsFound:
+                osd.Flash("Deshacer", "Esas pantallas ya no están conectadas", previous, Theme.Red);
+                break;
+            default:
+                Log.Error("Deshacer: " + error);
+                osd.Flash("No se pudo deshacer", error, previous, Theme.Red);
+                break;
+        }
+        settings?.RefreshSlots();
+    }
+
+    static List<MonitorState>? TrySnapshot()
+    {
+        try { return Displays.Snapshot(); }
+        catch (Win32Exception ex) { Log.Error("Leer pantallas", ex); return null; }
     }
 
     public void Cycle()
@@ -178,6 +224,10 @@ sealed class TrayApp : ApplicationContext
         next.ShortcutKeyDisplayString = Config.Cycle.ToString();
         next.Enabled = any;
         menu.Items.Add(next);
+        var undo = Item("Deshacer último cambio", Undo);
+        undo.ShortcutKeyDisplayString = Config.Undo.ToString();
+        undo.Enabled = Config.Previous is { Count: > 0 };
+        menu.Items.Add(undo);
 
         menu.Items.Add(new ToolStripSeparator());
         var open = Item("Configurar…", OpenSettings);
