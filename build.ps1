@@ -3,7 +3,7 @@
 # Uso:  pwsh -File build.ps1 [-Version 0.1.0]
 #   dist\MajinDesktop.exe                    la app (portable)
 #   dist\MajinDesktop-Setup-<versión>.exe    instalador con la app dentro
-param([string]$Version = '0.3.0')
+param([string]$Version = '0.4.0')
 $ErrorActionPreference = 'Stop'
 
 $root = $PSScriptRoot
@@ -36,7 +36,7 @@ using System.Reflection;
 $src = Join-Path $root 'src'
 $appSources = @(Get-ChildItem $src -Filter *.cs | ForEach-Object FullName) + $info
 # El instalador reutiliza el tema, los controles y lo mínimo que ellos necesitan.
-$setupSources = @('Native', 'Theme', 'Controls', 'Displays', 'Config', 'Log', 'Icons' | ForEach-Object { Join-Path $src "$_.cs" }) +
+$setupSources = @('Native', 'Theme', 'Controls', 'Displays', 'Config', 'Log', 'Icons', 'Shortcuts', 'Organizer' | ForEach-Object { Join-Path $src "$_.cs" }) +
     (Join-Path $root 'setup\Setup.cs') + $info
 $refs = 'mscorlib', 'System', 'System.Core', 'System.Drawing', 'System.Windows.Forms', 'System.Runtime.Serialization', 'System.Xml' |
     ForEach-Object { "/r:" + (Join-Path $fw "$_.dll") }

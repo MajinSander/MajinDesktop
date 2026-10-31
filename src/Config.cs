@@ -108,6 +108,11 @@ sealed class Config
     [DataMember(Name = "previous", Order = 5)] public List<MonitorState>? Previous = null;
     [DataMember(Name = "previousIcons", Order = 5)] public List<IconPos>? PreviousIcons = null;
 
+    // Organizador
+    [DataMember(Name = "zones", Order = 7)] public List<Zone> Zones = new();
+    [DataMember(Name = "autoPlaceNew", Order = 8)] public bool AutoPlaceNew;   // iconos nuevos → a su zona
+    [DataMember(Name = "fillFromRight", Order = 9)] public bool FillFromRight; // ordenar desde el borde derecho
+
     [DataMember(Name = "cycle", Order = 2)]
     string CycleText { get => Cycle.Serialize(); set => Cycle = Hotkey.Parse(value); }
 
@@ -115,7 +120,7 @@ sealed class Config
     string UndoText { get => Undo.Serialize(); set => Undo = Hotkey.Parse(value); }
 
     [OnDeserializing]
-    void Defaults(StreamingContext _) { Version = 2; Slots = NewSlots(); Cycle = new(); Undo = new(); Last = -1; }
+    void Defaults(StreamingContext _) { Version = 2; Slots = NewSlots(); Cycle = new(); Undo = new(); Last = -1; Zones = new(); }
 
     static Slot[] NewSlots() => Enumerable.Range(0, SlotCount).Select(_ => new Slot()).ToArray();
 

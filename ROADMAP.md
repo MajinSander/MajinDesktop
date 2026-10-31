@@ -16,10 +16,10 @@ Un estado tiene un nombre, un atajo y un color, y guarda solo las partes que tú
 
 | Parte | Qué guarda | Fase |
 |---|---|---|
-| Pantallas | posición, orientación, principal *(ya está)*; encendida o apagada, resolución, Hz, HDR | 0.1 / 0.4 |
+| Pantallas | posición, orientación, principal *(ya está)*; encendida o apagada, resolución, Hz, HDR | 0.1 / 0.6 |
 | Iconos | dónde está cada icono del escritorio, **relativo a cada pantalla** | 0.3 |
-| Audio | salida de sonido predeterminada (por ejemplo, la TV por HDMI) | 0.4 |
-| Escritorio | tamaño de los iconos, mostrarlos u ocultarlos, ocultar la barra de tareas | 0.3 / 0.4 |
+| Audio | salida de sonido predeterminada (por ejemplo, la TV por HDMI) | 0.6 |
+| Escritorio | tamaño de los iconos, mostrarlos u ocultarlos, ocultar la barra de tareas | 0.6 |
 | Acciones | abrir o cerrar programas, Steam Big Picture, un comando | 0.7 |
 
 Ejemplo, **Modo TV**: solo la TV encendida, HDR activado, audio por la TV, barra oculta y Steam Big Picture abierto. Con otro atajo vuelves a **Escritorio** y todo, iconos incluidos, queda como estaba.
@@ -47,33 +47,27 @@ Esta fase arregla un problema clásico: al cambiar de pantallas, Windows desorde
 
 Pendiente para más adelante: tamaño de iconos y mostrar u ocultar los iconos por estado.
 
-## v0.4 · Pantallas avanzadas, audio y modo TV
-
-- **Encender y apagar pantallas** (por ejemplo, la TV) con `QueryDisplayConfig(QDC_ALL_PATHS)`. Windows cambia el identificador de la gráfica (LUID) en cada arranque, así que se corrige al aplicar.
-- **Resolución y Hz** opcionales en cada estado.
-- **HDR por pantalla** con `DisplayConfigSetDeviceInfo` (estado de color avanzado).
-- **Salida de audio predeterminada.** Usa la misma interfaz interna de Windows que emplean programas como SoundSwitch o EarTrumpet. Queda aislada en un módulo por si alguna versión de Windows la cambia.
-- **Red de seguridad.** Si un estado apaga pantallas o cambia la resolución, sale *"¿Mantener esta configuración? Se revierte en 15 s"* en la pantalla nueva. Además habrá un atajo de emergencia que vuelve al último estado marcado como seguro.
-- **Barra de tareas:** ocultarla automáticamente por estado.
-
-*Hecho cuando:* con un atajo pasas a jugar en la TV con HDR y sonido por HDMI, y con otro vuelves al escritorio.
-
-## v0.5 · Organizador visual del escritorio
+## v0.4 · Organizador visual del escritorio ✅
 
 Es una ventana nueva con una **representación de tu escritorio**: tus pantallas a escala, la barra de tareas y cada icono en su sitio.
 
 - **Seleccionar** con clic, `Ctrl`+clic o un rectángulo. **Arrastrar** iconos, sueltos o en grupo, incluso a otra pantalla.
-- **Herramientas de orden:** alinear, repartir, ajustar a la cuadrícula real de Windows, compactar huecos y ordenar por nombre, tipo, plataforma o fecha.
+- **Herramientas de orden:** ajustar a la rejilla real de Windows (94×116 en tu escritorio), compactar huecos, ordenar por nombre o por tipo (Steam, Epic, GOG, programas, carpetas…), mover la selección a otra pantalla y llenar desde la izquierda o desde la derecha. Las flechas mueven la selección una celda y `Ctrl+Z` deshace dentro del organizador.
 - **Zonas** al estilo Fences, pero sin ventanas extra encima del escritorio. Por ejemplo "Juegos Steam" en la pantalla derecha o "Trabajo" en la izquierda. Son rectángulos con nombre que dibujas en el organizador, con reglas que deciden qué va en cada una (plataforma, tipo, carpeta, nombre). El botón *Ordenar* coloca cada icono en su zona.
 - **Iconos nuevos:** cuando aparece un acceso directo nuevo en el escritorio (por ejemplo, al instalar un juego), se coloca solo en su zona.
 - **Vista previa y aplicar.** Los cambios se ven en el organizador y se aplican al escritorio de una vez, con deshacer.
 - Las zonas solo existen en el organizador: no se dibuja nada en el escritorio real, para no interferir con Wallpaper Engine.
 
-*Hecho cuando:* desordenas el escritorio, pulsas *Ordenar* y cada juego vuelve a su zona.
+Comprobado en tu escritorio (89 iconos, 24 de Steam detectados):
+- *Ordenar en zonas* mete los juegos de Steam en su zona, por orden alfabético.
+- *Aplicar* y después `Ctrl+Alt+Shift+Retroceso` deja el escritorio como estaba.
+- Un acceso nuevo creado en el escritorio va solo a su zona.
 
-## v0.6 · Accesos directos de juegos
+Pendiente: ordenar por fecha y distribuir con espacios iguales.
 
-- **Inventario** de todo lo que hay en el escritorio (el tuyo y el público), clasificado: juego de Steam (`steam://rungameid/…`), Epic, GOG, EA, Ubisoft, Xbox, programa, carpeta, archivo, **roto** (el destino ya no existe) y **duplicado**.
+## v0.5 · Accesos directos de juegos
+
+- **Inventario** (la clasificación ya existe desde la 0.4 y se usa en las zonas) de todo lo que hay en el escritorio (el tuyo y el público), clasificado: juego de Steam (`steam://rungameid/…`), Epic, GOG, EA, Ubisoft, Xbox, programa, carpeta, archivo, **roto** (el destino ya no existe) y **duplicado**.
 - **Biblioteca de juegos instalados.**
   - Lee Steam (`libraryfolders.vdf` y `appmanifest_*.acf`), Epic (manifiestos `.item`), GOG, EA y Ubisoft (registro).
   - Marca qué juegos aún no tienen acceso directo y los **crea en lote**, con su icono, directamente en la zona que elijas.
@@ -89,6 +83,19 @@ Es una ventana nueva con una **representación de tu escritorio**: tus pantallas
 - **Diario de operaciones.** Cada cambio en un lote queda apuntado, así que *Deshacer* revierte el lote entero.
 
 *Hecho cuando:* instalas tres juegos y en dos clics tienen acceso directo, icono correcto y sitio en su zona.
+
+## v0.6 · Pantallas avanzadas, audio y modo TV
+
+- **Encender y apagar pantallas** (por ejemplo, la TV) con `QueryDisplayConfig(QDC_ALL_PATHS)`. Windows cambia el identificador de la gráfica (LUID) en cada arranque, así que se corrige al aplicar.
+- **Resolución y Hz** opcionales en cada estado.
+- **HDR por pantalla** con `DisplayConfigSetDeviceInfo` (estado de color avanzado).
+- **Salida de audio predeterminada.** Usa la misma interfaz interna de Windows que emplean programas como SoundSwitch o EarTrumpet. Queda aislada en un módulo por si alguna versión de Windows la cambia.
+- **Red de seguridad.** Si un estado apaga pantallas o cambia la resolución, sale *"¿Mantener esta configuración? Se revierte en 15 s"* en la pantalla nueva. Además habrá un atajo de emergencia que vuelve al último estado marcado como seguro.
+- **Barra de tareas:** ocultarla automáticamente por estado.
+
+Tu TV es una Samsung Crystal UHD de 2024 en modo juego: el estado *Modo TV* irá a 3840×2160 a 60 Hz con HDR10 y audio por la salida HDMI de la gráfica. Esta fase se prueba contigo delante y con la TV conectada.
+
+*Hecho cuando:* con un atajo pasas a jugar en la TV con HDR y sonido por HDMI, y con otro vuelves al escritorio.
 
 ## v0.7 · Disparadores automáticos y acciones
 
@@ -133,8 +140,8 @@ Es una ventana nueva con una **representación de tu escritorio**: tus pantallas
 
 - **v0.2** foundations: undo, JSON config, error log, automated tests (done).
 - **v0.3** desktop icons inside states (done).
-- **v0.4** advanced monitors, audio and a TV mode with a safety revert.
-- **v0.5** a visual desktop organizer with Fences-style zones.
-- **v0.6** game shortcuts: library scan, batch creation, icon fixing and batch operations with undo.
+- **v0.4** a visual desktop organizer with Fences-style zones (done).
+- **v0.5** game shortcuts: library scan, batch creation, icon fixing and batch operations with undo.
+- **v0.6** advanced monitors, audio and a TV mode with a safety revert.
 - **v0.7** automatic triggers.
 - **v1.0** polish.

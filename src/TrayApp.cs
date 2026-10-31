@@ -22,6 +22,10 @@ sealed class TrayApp : ApplicationContext
     readonly Osd osd = new();
     readonly Updater updater;
     SettingsForm? settings;
+    OrganizerForm? organizer;
+    readonly List<FileSystemWatcher> watchers = new();
+    readonly HashSet<string> pendingNew = new(StringComparer.OrdinalIgnoreCase);
+    readonly Timer newIconsTimer = new() { Interval = 1500 };
 
     public TrayApp(bool firstRun)
     {
@@ -33,6 +37,9 @@ sealed class TrayApp : ApplicationContext
         RegisterHotkeys();
         updater = new Updater((title, detail) => osd.Flash(title, detail, null, Theme.Accent));
         updater.Start();
+        _ = osd.Handle; // el vigilante del escritorio se sincroniza con esta ventana: tiene que existir ya
+        newIconsTimer.Tick += (_, _) => PlaceNewIcons();
+        UpdateDesktopWatcher();
         if (firstRun) OpenSettings();
         else Native.TrimMemory();
     }
@@ -315,6 +322,7 @@ sealed class TrayApp : ApplicationContext
         menu.Items.Add(undo);
 
         menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add(Item("Organizar escritorio…", OpenOrganizer));
         var open = Item("Configurar…", OpenSettings);
         open.Font = Theme.Bold;
         menu.Items.Add(open);
@@ -333,6 +341,107 @@ sealed class TrayApp : ApplicationContext
         var item = new ToolStripMenuItem(text) { Padding = new Padding(2, 4, 2, 4) };
         if (onClick != null) item.Click += (_, _) => onClick();
         return item;
+    }
+
+    // ---------- Organizador ----------
+
+    public void OpenOrganizer()
+    {
+        if (organizer == null || organizer.IsDisposed)
+        {
+            organizer = new OrganizerForm(this);
+            organizer.FormClosed += (_, _) =>
+            {
+                organizer = null;
+                Native.TrimMemory();
+            };
+            organizer.Show();
+        }
+        if (organizer.WindowState == FormWindowState.Minimized) organizer.WindowState = FormWindowState.Normal;
+        organizer.Activate();
+    }
+
+    // Aplica lo que se movió en el organizador. Ctrl+Alt+Shift+Retroceso lo deshace, como cualquier cambio.
+    public bool ApplyOrganizer(Dictionary<string, Point> targets)
+    {
+        try
+        {
+            var before = Icons.Snapshot(Displays.Snapshot());
+            int moved = Icons.MoveTo(targets, out bool autoArrange);
+            Config.Previous = null;
+            Config.PreviousIcons = before;
+            TrySave();
+            string detail = $"{moved} iconos colocados · {Config.Undo} lo deshace";
+            if (autoArrange) detail += " · quitado 'Organizar automáticamente'";
+            osd.Flash("Escritorio organizado", detail, null, Theme.Green);
+            return true;
+        }
+        catch (Exception ex) when (ex is COMException or InvalidCastException or Win32Exception)
+        {
+            Log.Error("Aplicar organizador", ex);
+            osd.Flash("No se pudo organizar", ex.Message, null, Theme.Red);
+            return false;
+        }
+    }
+
+    // Vigila el escritorio (el tuyo y el público) para llevar los accesos nuevos a su zona.
+    public void UpdateDesktopWatcher()
+    {
+        foreach (var w in watchers) w.Dispose();
+        watchers.Clear();
+        if (!Config.AutoPlaceNew || Config.Zones.Count == 0) return;
+        foreach (var dir in new[] { Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),
+                                    Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory) })
+        {
+            if (!Directory.Exists(dir)) continue;
+            var w = new FileSystemWatcher(dir) { NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName, SynchronizingObject = osd };
+            w.Created += (_, e) => QueueNew(e.FullPath);
+            w.Renamed += (_, e) => QueueNew(e.FullPath);
+            w.EnableRaisingEvents = true;
+            watchers.Add(w);
+        }
+    }
+
+    void QueueNew(string path)
+    {
+        pendingNew.Add(path);
+        newIconsTimer.Stop();   // se espera a que Windows termine de poner el icono en el escritorio
+        newIconsTimer.Start();
+    }
+
+    void PlaceNewIcons()
+    {
+        newIconsTimer.Stop();
+        var paths = pendingNew.ToList();
+        pendingNew.Clear();
+        try
+        {
+            var mons = Organizer.Monitors(Displays.Snapshot());
+            var items = Icons.Read(out var cell);
+            var taken = items.Select(i => i.Pos).ToList();
+            var targets = new Dictionary<string, Point>(StringComparer.OrdinalIgnoreCase);
+            var names = new List<string>();
+            foreach (var path in paths)
+            {
+                var item = items.FirstOrDefault(i => string.Equals(i.Key, path, StringComparison.OrdinalIgnoreCase));
+                if (item.Key == null) continue;
+                var zone = Organizer.ZoneFor(item.Name, Shortcuts.Inspect(path).Kind, Config.Zones);
+                if (zone == null || Organizer.ZoneRect(zone, mons) is not { } rect) continue;
+                taken.Remove(item.Pos);
+                if (Organizer.FreeCellIn(rect, cell, taken) is not { } free) continue;
+                targets[item.Key] = free;
+                taken.Add(free);
+                names.Add($"«{item.Name}» → {(zone.Name.Length > 0 ? zone.Name : "su zona")}");
+            }
+            if (targets.Count == 0) return;
+            Icons.MoveTo(targets, out _);
+            Log.Info("Iconos nuevos colocados: " + string.Join(", ", names));
+            osd.Flash("Icono nuevo colocado", names.Count == 1 ? names[0] : $"{names.Count} iconos llevados a sus zonas", null, Theme.Accent);
+        }
+        catch (Exception ex) when (ex is COMException or InvalidCastException or Win32Exception or IOException)
+        {
+            Log.Error("Colocar iconos nuevos", ex);
+        }
     }
 
     public void ToggleAutoStart()
@@ -367,6 +476,9 @@ sealed class TrayApp : ApplicationContext
         settings?.Close();
         tray.Visible = false;
         tray.Dispose();
+        organizer?.Close();
+        foreach (var w in watchers) w.Dispose();
+        newIconsTimer.Dispose();
         hotkeys.Dispose();
         updater.Dispose();
         osd.Dispose();

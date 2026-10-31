@@ -31,6 +31,15 @@ static class Tests
             Run("Iconos: ida y vuelta por pantalla", IconsRoundTrip);
             Run("Iconos: cambia la principal", IconsFollowTheirMonitor);
             Run("Iconos: pantalla ausente o más pequeña", IconsMissingOrSmaller);
+            Run("Organizador: celdas por columnas", OrgCells);
+            Run("Organizador: imán a la rejilla", OrgSnap);
+            Run("Organizador: colocar respetando ocupadas", OrgArrange);
+            Run("Organizador: orden por nombre", OrgSortName);
+            Run("Zonas: reglas", ZoneRules);
+            Run("Zonas: ordenar en zonas", ZoneSort);
+            Run("Zonas: celda libre para un icono nuevo", ZoneFreeCell);
+            Run("Accesos: clasificar destino", ClassifyTargets);
+            Run("Accesos: .url de Steam", SteamUrl);
             Run("Config: primera vez", ConfigDefaults);
             Run("Config: JSON ida y vuelta", ConfigRoundTrip);
             Run("Config: migra config.ini", ConfigMigratesIni);
@@ -219,6 +228,114 @@ static class Tests
         // La derecha pasa a horizontal (1920x1080): el icono que estaba a 1800 px de alto se queda dentro.
         var smaller = new Fake().Add("C", 0, 0, 2560, 1440).Add("R", 2560, 0, 1920, 1080).Current;
         Is(1080 - Cell.Height / 2, Icons.ToScreen(onRight, smaller, Cell)!.Value.Y, "recortado");
+    }
+
+    // ---------- Organizador ----------
+
+    static readonly System.Drawing.Rectangle Area = new(0, 0, 400, 300);
+    static readonly System.Drawing.Size C2 = new(100, 100);
+
+    static void OrgCells()
+    {
+        var cells = Organizer.Cells(Area, C2, false).ToList();
+        Is(3 * 2, cells.Count, "3 columnas x 2 filas");   // (400-2)/100 = 3, (300-2)/100 = 2
+        Is(new System.Drawing.Point(2, 2), cells[0], "primera");
+        Is(new System.Drawing.Point(2, 102), cells[1], "baja por la columna");
+        Is(new System.Drawing.Point(300, 2), Organizer.Cells(Area, C2, true).First(), "desde la derecha");
+    }
+
+    static void OrgSnap()
+    {
+        Is(new System.Drawing.Point(102, 102), Organizer.Snap(new System.Drawing.Point(130, 80), Area, C2, false), "celda cercana");
+        Is(new System.Drawing.Point(202, 102), Organizer.Snap(new System.Drawing.Point(9000, 9000), Area, C2, false), "se queda dentro");
+    }
+
+    static OrgItem It(string name, ItemKind kind = ItemKind.App, int x = 0, int y = 0) =>
+        new() { Key = name, Name = name, Kind = kind, Pos = new System.Drawing.Point(x, y), Original = new System.Drawing.Point(x, y) };
+
+    static void OrgArrange()
+    {
+        var items = new List<OrgItem> { It("a"), It("b"), It("c") };
+        int overflow = Organizer.Arrange(items, Area, C2, false, new[] { new System.Drawing.Point(2, 102) });
+        Is(0, overflow, "caben");
+        Is(new System.Drawing.Point(2, 2), items[0].Pos, "a");
+        Is(new System.Drawing.Point(102, 2), items[1].Pos, "b salta la ocupada");
+        var many = Enumerable.Range(0, 8).Select(i => It("x" + i)).ToList();
+        Is(2, Organizer.Arrange(many, Area, C2, false), "sobran 2");
+    }
+
+    static void OrgSortName()
+    {
+        var items = new List<OrgItem> { It("Zelda"), It("ánima"), It("HELLDIVERS™ 2"), It("batman") };
+        items.Sort(Organizer.ByName);
+        Is("ánima,batman,HELLDIVERS™ 2,Zelda", string.Join(",", items.Select(i => i.Name)), "orden");
+        var byKind = new List<OrgItem> { It("b", ItemKind.App), It("a", ItemKind.Steam) };
+        byKind.Sort(Organizer.ByKind);
+        Is("a", byKind[0].Name, "Steam antes que programas");
+    }
+
+    static void ZoneRules()
+    {
+        var games = new Zone { Kinds = { ItemKind.Game } };
+        Is(true, games.Matches("Hollow Knight", ItemKind.Steam), "cualquier juego incluye Steam");
+        Is(false, games.Matches("Discord", ItemKind.App), "programa no");
+        var words = new Zone { NameFilter = "dragon ball, xenoverse" };
+        Is(true, words.Matches("DRAGON BALL Sparking! ZERO", ItemKind.Steam), "palabra");
+        Is(false, new Zone().Matches("x", ItemKind.App), "sin regla no coge nada");
+        var both = new Zone { Kinds = { ItemKind.Steam }, NameFilter = "dragon" };
+        Is(false, both.Matches("DRAGON BALL", ItemKind.Epic), "tipo y nombre a la vez");
+    }
+
+    static void ZoneSort()
+    {
+        var mons = Organizer.Monitors(new List<MonitorState> { new() { Path = "C", X = 0, Y = 0, Width = 2560, Height = 1440 } });
+        mons[0].WorkArea = mons[0].Bounds;
+        var zones = new List<Zone>
+        {
+            new() { Name = "Steam", Monitor = "C", X = 1000, Y = 0, Width = 400, Height = 300, Kinds = { ItemKind.Steam } },
+            new() { Name = "Juegos", Monitor = "C", X = 0, Y = 500, Width = 400, Height = 300, Kinds = { ItemKind.Game } },
+        };
+        var items = new List<OrgItem> { It("Zeta", ItemKind.Steam), It("Alfa", ItemKind.Steam), It("Epic", ItemKind.Epic), It("Word", ItemKind.App, 7, 7) };
+        var (placed, overflow) = Organizer.SortIntoZones(items, zones, mons, C2);
+        Is(3, placed, "colocados");
+        Is(0, overflow, "caben");
+        Is(new System.Drawing.Point(1002, 2), items[1].Pos, "Alfa primero en la zona Steam");
+        Is(new System.Drawing.Point(1002, 102), items[0].Pos, "Zeta detrás");
+        Is(new System.Drawing.Point(2, 502), items[2].Pos, "Epic va a Juegos (la de Steam no la coge)");
+        Is(new System.Drawing.Point(7, 7), items[3].Pos, "Word no se toca");
+    }
+
+    static void ZoneFreeCell()
+    {
+        var zone = new System.Drawing.Rectangle(1000, 0, 400, 300);
+        var outside = new[] { new System.Drawing.Point(0, 0), new System.Drawing.Point(5000, 5000) };
+        Is(new System.Drawing.Point(1002, 2), Organizer.FreeCellIn(zone, C2, outside)!.Value, "los de fuera no ocupan");
+        var inside = new[] { new System.Drawing.Point(1002, 2) };
+        Is(new System.Drawing.Point(1002, 102), Organizer.FreeCellIn(zone, C2, inside)!.Value, "salta la ocupada");
+    }
+
+    static void ClassifyTargets()
+    {
+        Is(ItemKind.Steam, Shortcuts.ClassifyTarget(@"D:\SteamLibrary\steamapps\common\Hades\Hades.exe", ""), "Steam");
+        Is(ItemKind.Steam, Shortcuts.ClassifyTarget(@"C:\Program Files (x86)\Steam\steam.exe", "-applaunch 1 steam://rungameid/1"), "Steam por argumentos");
+        Is(ItemKind.Epic, Shortcuts.ClassifyTarget(@"C:\Program Files\Epic Games\Fortnite\x.exe", ""), "Epic");
+        Is(ItemKind.Broken, Shortcuts.ClassifyTarget(@"Z:\no\existe.exe", ""), "roto");
+        Is(ItemKind.System, Shortcuts.ClassifyTarget("", ""), "sistema");
+        Is(ItemKind.App, Shortcuts.ClassifyTarget(Environment.GetFolderPath(Environment.SpecialFolder.Windows) + @"\explorer.exe", ""), "programa");
+    }
+
+    static void SteamUrl()
+    {
+        string f = Path.Combine(Path.GetTempPath(), "md-test-" + Guid.NewGuid().ToString("N") + ".url");
+        File.WriteAllText(f, "[{000214A0-0000-0000-C000-000000000046}]\r\nProp3=19,0\r\n[InternetShortcut]\r\nIDList=\r\nIconIndex=0\r\nURL=steam://rungameid/367520\r\nIconFile=C:\\Steam\\steam\\games\\abc.ico\r\n");
+        try
+        {
+            var info = Shortcuts.Inspect(f);
+            Is(ItemKind.Steam, info.Kind, "tipo");
+            Is("steam://rungameid/367520", info.Target, "url");
+            Is(@"C:\Steam\steam\games\abc.ico", info.IconFile, "icono");
+        }
+        finally { File.Delete(f); }
     }
 
     // ---------- Configuración ----------

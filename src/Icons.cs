@@ -115,6 +115,35 @@ static class Icons
         return result;
     }
 
+    // Para el organizador: cada icono con su posición en pantalla, y el tamaño de celda de la rejilla.
+    public static List<(string Key, string Name, Point Pos)> Read(out Size cell)
+    {
+        using var desk = DesktopView.Open();
+        cell = desk.Spacing;
+        return desk.Items().Select(i => (i.Key, i.Name, desk.ToScreen(i.Position))).ToList();
+    }
+
+    // Mueve los iconos indicados (clave → esquina en pantalla). Devuelve cuántos se movieron.
+    public static int MoveTo(IDictionary<string, Point> targets, out bool autoArrangeDisabled)
+    {
+        autoArrangeDisabled = false;
+        using var desk = DesktopView.Open();
+        var pidls = new List<IntPtr>();
+        var points = new List<Point>();
+        foreach (var item in desk.Items())
+        {
+            if (!targets.TryGetValue(item.Key, out var screen)) continue;
+            var view = desk.ToView(screen);
+            if (view == item.Position) continue;
+            pidls.Add(item.Pidl);
+            points.Add(view);
+        }
+        if (pidls.Count == 0) return 0;
+        autoArrangeDisabled = desk.DisableAutoArrange();
+        desk.Position(pidls, points);
+        return pidls.Count;
+    }
+
     public static int Count()
     {
         using var desk = DesktopView.Open();

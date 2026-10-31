@@ -332,3 +332,63 @@ sealed class PartToggle : Control
         }
     }
 }
+
+// Etiqueta que se marca y desmarca (reglas de las zonas).
+sealed class Chip : Control
+{
+    bool on, hover;
+    public event Action? Toggled;
+
+    public Chip(string text)
+    {
+        Text = text;
+        Font = Theme.Small;
+        Cursor = Cursors.Hand;
+        TabStop = false;
+        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer |
+                 ControlStyles.ResizeRedraw | ControlStyles.UserPaint, true);
+        Size = new Size(TextRenderer.MeasureText(text, Theme.Small).Width + 18, 26);
+        Margin = new Padding(0, 0, 6, 6);
+    }
+
+    public bool Checked { get => on; set { on = value; Invalidate(); } }
+
+    protected override void OnMouseEnter(EventArgs e) { hover = true; Invalidate(); base.OnMouseEnter(e); }
+    protected override void OnMouseLeave(EventArgs e) { hover = false; Invalidate(); base.OnMouseLeave(e); }
+    protected override void OnClick(EventArgs e) { base.OnClick(e); on = !on; Invalidate(); Toggled?.Invoke(); }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var g = e.Graphics;
+        g.Clear(Parent?.BackColor ?? Theme.Panel);
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        Color bg = on ? (hover ? Theme.AccentDark : Theme.Accent) : (hover ? Theme.Hover : Theme.Deep);
+        using (var path = Theme.Rounded(new RectangleF(0, 0, Width - 0.5f, Height - 0.5f), Height / 2f))
+        using (var b = new SolidBrush(bg)) g.FillPath(b, path);
+        TextRenderer.DrawText(g, Text, Font, ClientRectangle, on ? Color.White : Theme.Text,
+            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine);
+    }
+}
+
+// Pregunta Sí/No con el tema oscuro (MessageBox sale en blanco).
+static class DarkDialog
+{
+    public static bool Ask(IWin32Window owner, string title, string text, string yes, string no)
+    {
+        using var f = new Form
+        {
+            Text = title, FormBorderStyle = FormBorderStyle.FixedDialog, MaximizeBox = false, MinimizeBox = false,
+            ShowInTaskbar = false, StartPosition = FormStartPosition.CenterParent, BackColor = Theme.Bg, ForeColor = Theme.Text,
+            Font = Theme.Body, AutoScaleDimensions = new SizeF(96f, 96f), AutoScaleMode = AutoScaleMode.Dpi, ClientSize = new Size(420, 150),
+        };
+        f.HandleCreated += (_, _) => Native.DarkTitleBar(f.Handle);
+        f.Controls.Add(new Label { Text = text, Location = new Point(20, 20), Size = new Size(380, 60) });
+        var noBtn = new PillButton(no, PillButton.Kind.Secondary) { Bounds = new Rectangle(196, 100, 100, 34) };
+        var yesBtn = new PillButton(yes, PillButton.Kind.Primary) { Bounds = new Rectangle(304, 100, 100, 34) };
+        noBtn.Click += (_, _) => { f.DialogResult = DialogResult.No; };
+        yesBtn.Click += (_, _) => { f.DialogResult = DialogResult.Yes; };
+        f.Controls.Add(noBtn);
+        f.Controls.Add(yesBtn);
+        return f.ShowDialog(owner) == DialogResult.Yes;
+    }
+}

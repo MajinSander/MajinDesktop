@@ -115,43 +115,8 @@ static class Setup
         });
     }
 
-    // --- Accesos directos (.lnk) con IShellLink ---
-    [ComImport, Guid("00021401-0000-0000-C000-000000000046")]
-    class ShellLink { }
-
-    [ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown), Guid("000214F9-0000-0000-C000-000000000046")]
-    interface IShellLinkW
-    {
-        void GetPath([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder file, int cch, IntPtr fd, int flags);
-        void GetIDList(out IntPtr pidl);
-        void SetIDList(IntPtr pidl);
-        void GetDescription([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder name, int cch);
-        void SetDescription([MarshalAs(UnmanagedType.LPWStr)] string name);
-        void GetWorkingDirectory([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder dir, int cch);
-        void SetWorkingDirectory([MarshalAs(UnmanagedType.LPWStr)] string dir);
-        void GetArguments([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder args, int cch);
-        void SetArguments([MarshalAs(UnmanagedType.LPWStr)] string args);
-        void GetHotkey(out short hotkey);
-        void SetHotkey(short hotkey);
-        void GetShowCmd(out int cmd);
-        void SetShowCmd(int cmd);
-        void GetIconLocation([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder path, int cch, out int index);
-        void SetIconLocation([MarshalAs(UnmanagedType.LPWStr)] string path, int index);
-        void SetRelativePath([MarshalAs(UnmanagedType.LPWStr)] string path, int reserved);
-        void Resolve(IntPtr hwnd, int flags);
-        void SetPath([MarshalAs(UnmanagedType.LPWStr)] string file);
-    }
-
-    static void CreateLink(string linkPath, string target)
-    {
-        var link = (IShellLinkW)new ShellLink();
-        link.SetPath(target);
-        link.SetWorkingDirectory(Path.GetDirectoryName(target)!);
-        link.SetDescription("Estados del escritorio: pantallas, iconos y accesos directos");
-        link.SetIconLocation(target, 0);
-        ((IPersistFile)link).Save(linkPath, true);
-        Marshal.ReleaseComObject(link);
-    }
+    static void CreateLink(string linkPath, string target) =>
+        Shortcuts.CreateLnk(linkPath, target, "Estados del escritorio: pantallas, iconos y accesos directos");
 }
 
 sealed class SetupForm : Form
