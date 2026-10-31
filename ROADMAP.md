@@ -65,24 +65,23 @@ Comprobado en tu escritorio (89 iconos, 24 de Steam detectados):
 
 Pendiente: ordenar por fecha y distribuir con espacios iguales.
 
-## v0.5 · Accesos directos de juegos
+## v0.5 · Accesos directos de juegos ✅
 
-- **Inventario** (la clasificación ya existe desde la 0.4 y se usa en las zonas) de todo lo que hay en el escritorio (el tuyo y el público), clasificado: juego de Steam (`steam://rungameid/…`), Epic, GOG, EA, Ubisoft, Xbox, programa, carpeta, archivo, **roto** (el destino ya no existe) y **duplicado**.
-- **Biblioteca de juegos instalados.**
-  - Lee Steam (`libraryfolders.vdf` y `appmanifest_*.acf`), Epic (manifiestos `.item`), GOG, EA y Ubisoft (registro).
-  - Marca qué juegos aún no tienen acceso directo y los **crea en lote**, con su icono, directamente en la zona que elijas.
-- **Iconos.**
-  - **Arreglar los iconos en blanco de Steam.** El `.url` ya indica qué `.ico` falta, así que se descarga de la CDN de Steam.
-  - **Cambiar el icono** desde el `.exe` del juego, desde la caché de Steam o desde cualquier PNG o JPG, que se convierte a `.ico` de varios tamaños y se guarda en la carpeta de la app.
-  - Al terminar, se avisa a Explorer para que refresque la caché de iconos sin reiniciar.
-- **Operaciones en lote.**
-  - Renombrar: quitar " - Acceso directo", ™ y ®, poner mayúsculas.
-  - Mover a una zona o a una carpeta.
-  - Cambiar el icono de varios a la vez.
-  - Mandar los rotos a la papelera.
-- **Diario de operaciones.** Cada cambio en un lote queda apuntado, así que *Deshacer* revierte el lote entero.
+Ventana *Juegos y accesos directos*, en la bandeja y en la configuración.
 
-*Hecho cuando:* instalas tres juegos y en dos clics tienen acceso directo, icono correcto y sitio en su zona.
+- **Biblioteca.**
+  - Lee tus juegos instalados en Steam (todas las bibliotecas de `libraryfolders.vdf` y sus `appmanifest`), Epic (manifiestos `.item`) y GOG (registro).
+  - Separa los juegos de las herramientas con la caché de Steam (`appinfo.vdf`, formato binario v29) y marca cuáles no tienen acceso en el escritorio.
+  - **Crea los accesos en lote**, con su icono, y si quieres los lleva a su zona del organizador.
+- **Iconos de Steam.** El icono de cada juego (`clienticon`) se saca de `appinfo.vdf`. Si Steam no lo ha descargado (el típico icono en blanco), se descarga de su CDN y se guarda donde Steam lo busca. *Arreglar iconos* hace lo mismo con los accesos que ya tienes.
+- **Cambiar el icono** de uno o varios accesos desde un `.ico`, `.exe`, `.dll` o cualquier PNG o JPG, que se convierte a `.ico` de varios tamaños en la carpeta de la app. Explorer se entera al momento, sin reiniciarlo.
+- **Lote sobre el escritorio** (todo o solo lo marcado):
+  - Limpiar nombres: quita " - Acceso directo", ™ y ®, sin pisar archivos que ya existan.
+  - Mandar los accesos rotos a la Papelera de reciclaje, tras confirmarlo.
+- **Deshacer** revierte el último lote: accesos creados, nombres e iconos. Lo enviado a la papelera se recupera desde la Papelera de reciclaje.
+- Comprobado con tus bibliotecas: 27 juegos de Steam en 9 discos leídos en 0,4 s, 8 sin acceso. Crear el de Dead Cells descargó su icono, y *Deshacer* lo quitó.
+
+Pendiente: EA, Ubisoft y Battle.net en la biblioteca, juegos de Xbox / Microsoft Store, y elegir icono desde la caché de portadas de Steam.
 
 ## v0.6 · Pantallas avanzadas, audio y modo TV
 
@@ -141,7 +140,7 @@ Tu TV es una Samsung Crystal UHD de 2024 en modo juego: el estado *Modo TV* irá
 - **v0.2** foundations: undo, JSON config, error log, automated tests (done).
 - **v0.3** desktop icons inside states (done).
 - **v0.4** a visual desktop organizer with Fences-style zones (done).
-- **v0.5** game shortcuts: library scan, batch creation, icon fixing and batch operations with undo.
+- **v0.5** game shortcuts: library scan, batch creation, icon fixing and batch operations with undo (done).
 - **v0.6** advanced monitors, audio and a TV mode with a safety revert.
 - **v0.7** automatic triggers.
 - **v1.0** polish.

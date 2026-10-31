@@ -105,13 +105,19 @@ static class Theme
     static Icon? appIcon;
     public static Icon AppIcon => appIcon ??= Icon.FromHandle(IconBitmap(SystemInformation.SmallIconSize.Width).GetHicon());
 
-    // Escribe un .ico multi-tamaño (entradas PNG) para el ejecutable.
-    public static void WriteIco(string path)
+    // .ico multi-tamaño para el ejecutable.
+    public static void WriteIco(string path) => Ico.Write(path, IconBitmap);
+}
+
+// .ico de varios tamaños con entradas PNG.
+static class Ico
+{
+    public static void Write(string path, Func<int, Bitmap> render)
     {
-        int[] sizes = { 16, 20, 24, 32, 48, 64, 256 };
+        int[] sizes = { 16, 20, 24, 32, 48, 64, 128, 256 };
         var pngs = sizes.Select(sz =>
         {
-            using var b = IconBitmap(sz);
+            using var b = render(sz);
             using var ms = new MemoryStream();
             b.Save(ms, ImageFormat.Png);
             return ms.ToArray();

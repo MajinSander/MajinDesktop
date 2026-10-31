@@ -6,7 +6,9 @@
 
 <p align="center"><img src="docs/settings.png" width="640" alt="Ventana de MajinDesktop"></p>
 
-<p align="center"><img src="docs/organizer.png" width="820" alt="Organizador del escritorio"></p>
+<p align="center"><img src="docs/organizer.png" width="820" alt="Organizador del escritorio"></p>
+
+<p align="center"><img src="docs/games.png" width="640" alt="Juegos y accesos directos"></p>
 
 ## Qué hace
 
@@ -21,12 +23,16 @@
   - **Zonas** al estilo Fences: dibuja un rectángulo, dile qué va dentro (juegos de Steam, Epic, GOG, programas, carpetas, palabras del nombre…) y pulsa *Ordenar en zonas*. Las zonas solo existen en el organizador; en el escritorio no se dibuja nada.
   - Si quieres, los accesos nuevos (por ejemplo, al instalar un juego) van solos a su zona.
   - Nada cambia en el escritorio hasta pulsar *Aplicar*, y después `Ctrl+Alt+Shift+Retroceso` lo deshace.
+- **Juegos y accesos directos.**
+  - Lee tus juegos instalados en Steam, Epic y GOG, y crea en lote los accesos que te faltan, con su icono (si Steam no lo había descargado, lo descarga de su CDN).
+  - En el escritorio arregla los iconos en blanco de Steam, limpia los nombres (fuera " - Acceso directo", ™ y ®), manda los accesos rotos a la papelera y cambia el icono de varios a la vez, desde un `.ico`, un `.exe` o cualquier imagen.
+  - *Deshacer* revierte el último lote.
 - **Atajos globales.** `Ctrl+Alt+Shift+1…9` aplican cada estado, `Ctrl+Alt+Shift+0` pasa al siguiente y `Ctrl+Alt+Shift+Retroceso` deshace el último cambio (pulsándolo otra vez, lo rehace). Se cambian haciendo clic en la caja y pulsando la combinación. Si otra aplicación ya usa una combinación, la caja se pone en rojo.
 - **Reconoce cada monitor.** Identifica cada pantalla por modelo y puerto, así que no se lía aunque Windows cambie los números DISPLAY1/2/3.
 - **Aviso en pantalla.** Al cambiar de estado aparece un aviso pequeño con un dibujo de la disposición. No te quita el foco.
 - **Bandeja del sistema.** Con clic izquierdo abres la configuración. Con clic derecho, un menú con tus estados (el activo lleva ✓) para guardar, cambiar de estado, iniciar con Windows o salir.
 - **Se actualiza sola.** Si la tienes instalada, al arrancar y cada 6 horas mira si hay una release nueva en este repositorio. Si la hay, la instala en silencio y se vuelve a abrir. La versión portable solo avisa, y el menú de la bandeja tiene *Buscar actualizaciones*.
-- **Muy ligero.** La app pesa unos 150 KB, ocupa unos 4 MB de RAM y no gasta CPU mientras espera un atajo.
+- **Muy ligero.** La app pesa unos 190 KB, ocupa unos 4 MB de RAM y no gasta CPU mientras espera un atajo.
 - **Línea de comandos** para Stream Deck o tus propios scripts:
 
   ```
@@ -39,7 +45,7 @@
 
 No cambia la resolución, la frecuencia ni la escala, tampoco enciende ni apaga pantallas, y **nunca toca el fondo de pantalla** (convive con Wallpaper Engine). Si un estado no incluye una pantalla que ahora está conectada, esa pantalla se queda donde está; si choca con otra, se mueve a la derecha. Los iconos que no estaban al guardar el estado se quedan donde estén. Si tienes activado *Organizar iconos automáticamente*, se desactiva al colocar los iconos, porque con esa opción Windows ignora las posiciones.
 
-Lo que viene después está en el [plan de mejoras](ROADMAP.md): crear y arreglar accesos directos de juegos en lote, y un modo TV (encender y apagar pantallas, HDR, audio).
+Lo que viene después está en el [plan de mejoras](ROADMAP.md): un modo TV (encender y apagar pantallas, HDR, audio) y disparadores automáticos.
 
 ## Descarga
 
@@ -68,4 +74,4 @@ Al publicar una release en GitHub, el workflow `release.yml` compila la app y ad
 
 ---
 
-**English:** MajinDesktop saves your monitor layout (position and orientation) and your desktop icon positions, stored per monitor, in 9 states, and switches between them with global hotkeys. A visual organizer shows your desktop to scale to move, sort and group icons into Fences-style zones. It's a tray app of about 150 KB that uses about 4 MB of RAM. Download the installer or the portable exe from [Releases](https://github.com/MajinSander/MajinDesktop/releases/latest). The [roadmap](ROADMAP.md) explains how it will grow into a full desktop state manager.
+**English:** MajinDesktop saves your monitor layout (position and orientation) and your desktop icon positions, stored per monitor, in 9 states, and switches between them with global hotkeys. A visual organizer shows your desktop to scale to move, sort and group icons into Fences-style zones, and a games window creates missing shortcuts for your Steam, Epic and GOG games, fixes blank Steam icons and renames or re-icons shortcuts in bulk. It's a tray app of about 190 KB that uses about 4 MB of RAM. Download the installer or the portable exe from [Releases](https://github.com/MajinSander/MajinDesktop/releases/latest). The [roadmap](ROADMAP.md) explains how it will grow into a full desktop state manager.

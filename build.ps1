@@ -3,7 +3,7 @@
 # Uso:  pwsh -File build.ps1 [-Version 0.1.0]
 #   dist\MajinDesktop.exe                    la app (portable)
 #   dist\MajinDesktop-Setup-<versión>.exe    instalador con la app dentro
-param([string]$Version = '0.4.0')
+param([string]$Version = '0.5.0')
 $ErrorActionPreference = 'Stop'
 
 $root = $PSScriptRoot

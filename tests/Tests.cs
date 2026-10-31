@@ -40,6 +40,13 @@ static class Tests
             Run("Zonas: celda libre para un icono nuevo", ZoneFreeCell);
             Run("Accesos: clasificar destino", ClassifyTargets);
             Run("Accesos: .url de Steam", SteamUrl);
+            Run("Lote: limpiar nombres", BatchCleanNames);
+            Run("Lote: renombrar y deshacer", BatchRenameUndo);
+            Run("Lote: icono de .lnk y deshacer", BatchLnkIcon);
+            Run("Lote: icono de .url y deshacer", BatchUrlIcon);
+            Run("Lote: imagen a .ico", BatchImageToIco);
+            Run("Biblioteca: appmanifest", LibraryAcf);
+            Run("Biblioteca: nombres de archivo", LibraryFileNames);
             Run("Config: primera vez", ConfigDefaults);
             Run("Config: JSON ida y vuelta", ConfigRoundTrip);
             Run("Config: migra config.ini", ConfigMigratesIni);
@@ -336,6 +343,110 @@ static class Tests
             Is(@"C:\Steam\steam\games\abc.ico", info.IconFile, "icono");
         }
         finally { File.Delete(f); }
+    }
+
+    // ---------- Lote ----------
+
+    static string TempDir()
+    {
+        string d = Path.Combine(Path.GetTempPath(), "md-batch-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(d);
+        return d;
+    }
+
+    static void BatchCleanNames()
+    {
+        Is("Hollow Knight", Batch.CleanName("Hollow Knight - Acceso directo"), "sufijo");
+        Is("HELLDIVERS 2", Batch.CleanName("HELLDIVERS™ 2"), "marca");
+        Is("Juego", Batch.CleanName("Juego - Shortcut (2)"), "inglés con número");
+        Is("Normal", Batch.CleanName("Normal"), "sin cambios");
+    }
+
+    static void BatchRenameUndo()
+    {
+        string d = TempDir();
+        try
+        {
+            string f = Path.Combine(d, "Juego - Acceso directo.url");
+            File.WriteAllText(f, "[InternetShortcut]\r\nURL=steam://rungameid/1\r\n");
+            File.WriteAllText(Path.Combine(d, "Juego.url"), "ya existe");
+            var step = new BatchStep();
+            Batch.Rename(f, Batch.CleanName("Juego - Acceso directo"), step);
+            Is(true, File.Exists(Path.Combine(d, "Juego (2).url")), "no pisa el que ya existe");
+            foreach (var u in step.Undo) u();
+            Is(true, File.Exists(f), "deshecho");
+        }
+        finally { Directory.Delete(d, true); }
+    }
+
+    static void BatchLnkIcon()
+    {
+        string d = TempDir();
+        try
+        {
+            string notepad = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "notepad.exe");
+            string lnk = Path.Combine(d, "Bloc.lnk");
+            Shortcuts.CreateLnk(lnk, notepad);
+            string shell32 = Path.Combine(Environment.SystemDirectory, "shell32.dll");
+            var step = new BatchStep();
+            Batch.SetIcon(lnk, shell32, 12, step);
+            Is((shell32, 12), Batch.GetIcon(lnk), "icono nuevo");
+            foreach (var u in step.Undo) u();
+            Is(notepad, Batch.GetIcon(lnk).file, "deshecho");
+            Is(ItemKind.App, Shortcuts.Inspect(lnk).Kind, "sigue siendo un programa");
+        }
+        finally { Directory.Delete(d, true); }
+    }
+
+    static void BatchUrlIcon()
+    {
+        string d = TempDir();
+        try
+        {
+            string url = Path.Combine(d, "Juego.url");
+            File.WriteAllText(url, "[{000214A0-0000-0000-C000-000000000046}]\r\nProp3=19,0\r\n[InternetShortcut]\r\nURL=steam://rungameid/5\r\nIconFile=C:\\viejo.ico\r\nIconIndex=0\r\n");
+            var step = new BatchStep();
+            Batch.SetIcon(url, @"C:\nuevo.ico", 0, step);
+            var info = Shortcuts.Inspect(url);
+            Is(@"C:\nuevo.ico", info.IconFile, "icono nuevo");
+            Is("steam://rungameid/5", info.Target, "la URL no se toca");
+            Is(true, File.ReadAllText(url).Contains("Prop3=19,0"), "el resto del archivo tampoco");
+            foreach (var u in step.Undo) u();
+            Is(@"C:\viejo.ico", Shortcuts.Inspect(url).IconFile, "deshecho");
+        }
+        finally { Directory.Delete(d, true); }
+    }
+
+    static void BatchImageToIco()
+    {
+        string d = TempDir();
+        try
+        {
+            string png = Path.Combine(d, "portada.png");
+            using (var b = new System.Drawing.Bitmap(300, 150)) b.Save(png, System.Drawing.Imaging.ImageFormat.Png);
+            string ico = Batch.ImageToIco(png);
+            // Cabecera ICO: 8 tamaños, del 16 al 256 (que se escribe como 0). .NET no lee las entradas PNG; Windows sí.
+            var bytes = File.ReadAllBytes(ico);
+            Is((short)8, BitConverter.ToInt16(bytes, 4), "número de tamaños");
+            Is((byte)16, bytes[6], "el primero es de 16 px");
+            Is((byte)0, bytes[6 + 7 * 16], "el último es de 256 px");
+            File.Delete(ico);
+        }
+        finally { Directory.Delete(d, true); }
+    }
+
+    static void LibraryAcf()
+    {
+        var kv = Library.ReadAcf("\"AppState\"\n{\n\t\"appid\"\t\t\"367520\"\n\t\"name\"\t\t\"Hollow Knight\"\n\t\"installdir\"\t\t\"Hollow Knight\"\n\t\"UserConfig\"\n\t{\n\t\t\"name\"\t\t\"otro\"\n\t}\n}");
+        Is("367520", kv["appid"], "appid");
+        Is("Hollow Knight", kv["name"], "nombre (el primero, no el de UserConfig)");
+        Is("367520", Library.SteamAppId("steam://rungameid/367520"), "appid de la URL");
+    }
+
+    static void LibraryFileNames()
+    {
+        Is("DRAGON BALL Sparking! ZERO", Library.SafeFileName("DRAGON BALL: Sparking! ZERO").Replace("  ", " "), "sin dos puntos");
+        Is("ab", Library.SafeFileName("a\\b").Replace(" ", ""), "sin barras");
     }
 
     // ---------- Configuración ----------

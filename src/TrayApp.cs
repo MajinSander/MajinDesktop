@@ -23,6 +23,7 @@ sealed class TrayApp : ApplicationContext
     readonly Updater updater;
     SettingsForm? settings;
     OrganizerForm? organizer;
+    GamesForm? gamesForm;
     readonly List<FileSystemWatcher> watchers = new();
     readonly HashSet<string> pendingNew = new(StringComparer.OrdinalIgnoreCase);
     readonly Timer newIconsTimer = new() { Interval = 1500 };
@@ -323,6 +324,7 @@ sealed class TrayApp : ApplicationContext
 
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(Item("Organizar escritorio…", OpenOrganizer));
+        menu.Items.Add(Item("Juegos y accesos directos…", OpenGames));
         var open = Item("Configurar…", OpenSettings);
         open.Font = Theme.Bold;
         menu.Items.Add(open);
@@ -361,6 +363,18 @@ sealed class TrayApp : ApplicationContext
         organizer.Activate();
     }
 
+    public void OpenGames()
+    {
+        if (gamesForm == null || gamesForm.IsDisposed)
+        {
+            gamesForm = new GamesForm(this);
+            gamesForm.FormClosed += (_, _) => { gamesForm = null; Native.TrimMemory(); };
+            gamesForm.Show();
+        }
+        if (gamesForm.WindowState == FormWindowState.Minimized) gamesForm.WindowState = FormWindowState.Normal;
+        gamesForm.Activate();
+    }
+
     // Aplica lo que se movió en el organizador. Ctrl+Alt+Shift+Retroceso lo deshace, como cualquier cambio.
     public bool ApplyOrganizer(Dictionary<string, Point> targets)
     {
@@ -395,14 +409,15 @@ sealed class TrayApp : ApplicationContext
         {
             if (!Directory.Exists(dir)) continue;
             var w = new FileSystemWatcher(dir) { NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName, SynchronizingObject = osd };
-            w.Created += (_, e) => QueueNew(e.FullPath);
-            w.Renamed += (_, e) => QueueNew(e.FullPath);
+            w.Created += (_, e) => QueueNewIcon(e.FullPath);
+            w.Renamed += (_, e) => QueueNewIcon(e.FullPath);
             w.EnableRaisingEvents = true;
             watchers.Add(w);
         }
     }
 
-    void QueueNew(string path)
+    // Lleva un acceso recién creado a su zona en cuanto Windows lo haya puesto en el escritorio.
+    public void QueueNewIcon(string path)
     {
         pendingNew.Add(path);
         newIconsTimer.Stop();   // se espera a que Windows termine de poner el icono en el escritorio
@@ -477,6 +492,7 @@ sealed class TrayApp : ApplicationContext
         tray.Visible = false;
         tray.Dispose();
         organizer?.Close();
+        gamesForm?.Close();
         foreach (var w in watchers) w.Dispose();
         newIconsTimer.Dispose();
         hotkeys.Dispose();

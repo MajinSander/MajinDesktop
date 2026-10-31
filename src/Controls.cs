@@ -64,8 +64,10 @@ sealed class PillButton : Control
 {
     public enum Kind { Primary, Secondary, Ghost }
 
-    readonly Kind kind;
+    Kind kind;
     bool hover, down;
+
+    public Kind Style { get => kind; set { kind = value; Invalidate(); } }
 
     public PillButton(string text, Kind kind)
     {

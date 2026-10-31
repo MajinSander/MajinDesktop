@@ -50,7 +50,7 @@ sealed class SettingsForm : Form
         Add(new Label { Text = "MajinDesktop", Font = Theme.Title, ForeColor = Theme.Bright, AutoSize = true }, 72, 14);
         Add(new Label
         {
-            Text = "Guarda tus pantallas y los iconos del escritorio en estados\ny cambia entre ellos con un atajo.",
+            Text = "Guarda tus pantallas y los iconos del escritorio\nen estados y cambia entre ellos con un atajo.",
             ForeColor = Theme.Muted, AutoSize = true,
         }, 74, 46);
 
@@ -110,6 +110,10 @@ sealed class SettingsForm : Form
         organize.SetBounds(600, 44, 180, 30);
         organize.Click += (_, _) => app.OpenOrganizer();
         Controls.Add(organize);
+        var gamesButton = new PillButton("Juegos y accesos…", PillButton.Kind.Secondary);
+        gamesButton.SetBounds(440, 44, 152, 30);
+        gamesButton.Click += (_, _) => app.OpenGames();
+        Controls.Add(gamesButton);
         folder.LinkClicked += (_, _) =>
         {
             System.IO.Directory.CreateDirectory(Config.Dir);

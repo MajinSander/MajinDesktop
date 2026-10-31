@@ -75,6 +75,18 @@ static class Program
                     }
                     return 0;
 
+                case "games":
+                {
+                    var sw = System.Diagnostics.Stopwatch.StartNew();
+                    var games = Library.Scan();
+                    var desk = Icons.Read(out _).Select(i => (i.Key, Shortcuts.Inspect(i.Key))).ToList();
+                    Library.MatchShortcuts(games, desk);
+                    foreach (var g in games)
+                        Console.WriteLine($"{g.Platform,-6} {g.Name,-45} {(g.Shortcut != null ? "acceso" : "-"),-7} icono:{(g.IconFile.Length == 0 ? "?" : File.Exists(g.IconFile) ? "ok" : "falta")}");
+                    Console.WriteLine($"{games.Count} juegos, {games.Count(g => g.Shortcut == null)} sin acceso ({sw.ElapsedMilliseconds} ms)");
+                    return 0;
+                }
+
                 case "version":
                     Console.WriteLine(Application.ProductVersion);
                     return 0;
