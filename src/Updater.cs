@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.IO;
 using System.Net;
@@ -60,19 +60,32 @@ sealed class Updater : IDisposable
                     if (manual) Post("Estás al día", $"MajinDesktop {Application.ProductVersion} es la última versión");
                     return;
                 }
-                Available = version.ToString(3);
+                                Available = version.ToString(3);
                 if (!Installed || setupUrl == null)
                 {
                     Post($"MajinDesktop {Available} disponible", "Descárgala desde el menú de la bandeja");
                     return;
                 }
+                if (!Uri.TryCreate(setupUrl, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps ||
+                    (!uri.Host.EndsWith("github.com", StringComparison.OrdinalIgnoreCase) && !uri.Host.EndsWith("githubusercontent.com", StringComparison.OrdinalIgnoreCase)))
+                {
+                    throw new System.Security.SecurityException("URL de descarga no autorizada");
+                }
                 Log.Info($"Actualizando a {Available}");
                 Post($"Actualizando a {Available}", "MajinDesktop se reiniciará en unos segundos");
-                string file = Path.Combine(Path.GetTempPath(), $"MajinDesktop-Setup-{Available}.exe");
+                string tempDir = Path.Combine(Path.GetTempPath(), "MajinDesktopUpdate");
+                Directory.CreateDirectory(tempDir);
+                string file = Path.Combine(tempDir, $"MajinDesktop-Setup-{Available}.exe");
+                if (File.Exists(file)) File.Delete(file);
                 using (var web = Client()) web.DownloadFile(setupUrl, file);
+                using (var stream = File.OpenRead(file))
+                {
+                    if (stream.Length < 100_000 || stream.ReadByte() != 'M' || stream.ReadByte() != 'Z')
+                        throw new InvalidDataException("El archivo descargado no es un instalador ejecutable válido");
+                }
                 Process.Start(new ProcessStartInfo(file, "/S") { UseShellExecute = false });
             }
-            catch (Exception ex) when (ex is WebException or IOException or FormatException or System.ComponentModel.Win32Exception)
+            catch (Exception ex) when (ex is WebException or IOException or FormatException or System.ComponentModel.Win32Exception or System.Security.SecurityException)
             {
                 Log.Error("Actualización", ex);
                 if (manual) Post("No se pudo buscar actualizaciones", ex.Message);
